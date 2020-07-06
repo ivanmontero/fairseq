@@ -26,6 +26,7 @@ from fairseq.modules import (
     TransformerDecoderLayer,
     TransformerEncoderLayer,
     MultiheadAttention,
+    AutoencoderDecoderLayer,
 )
 import random
 
@@ -34,7 +35,7 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
 @register_model('autoencoder')
-class AutoEncoder(FairseqEncoderDecoderModel):
+class Autoencoder(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
@@ -222,11 +223,11 @@ class AutoEncoder(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_encoder(cls, args, src_dict, embed_tokens):
-        return TransformerEncoder(args, src_dict, embed_tokens)
+        return AutoencoderEncoder(args, src_dict, embed_tokens)
 
     @classmethod
     def build_decoder(cls, args, tgt_dict, embed_tokens):
-        return TransformerDecoder(
+        return AutoencoderDecoder(
             args,
             tgt_dict,
             embed_tokens,
@@ -241,7 +242,7 @@ AutoencoderEncoderOut = namedtuple('AutoencoderEncoderOut', [
     'bottleneck_out', # B x C
 ])
 
-class AutoEncoderEncoder(FairseqEncoder):
+class AutoencoderEncoder(FairseqEncoder):
     """
     Transformer encoder consisting of *args.encoder_layers* layers. Each layer
     is a :class:`TransformerEncoderLayer`.
@@ -354,14 +355,15 @@ class AutoEncoderEncoder(FairseqEncoder):
             if return_all_hiddens:
                 encoder_states[-1] = x
         
-        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], attn_mask=)
+        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:])[0]
         # self.bottleneck(bert_hidden[:,0,:], bert_hidden[:,1:,:], attention_mask=attention_mask[:,1:])
 
-        return EncoderOut(
+        return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
             encoder_embedding=encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
+            bottleneck_out=bottleneck_out,
         )
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -427,7 +429,7 @@ class AutoEncoderEncoder(FairseqEncoder):
         return state_dict
 
 
-class AutoEncoderDecoder(FairseqIncrementalDecoder):
+class AutoencoderDecoder(FairseqIncrementalDecoder):
     """
     Transformer decoder consisting of *args.decoder_layers* layers. Each layer
     is a :class:`TransformerDecoderLayer`.
@@ -727,7 +729,7 @@ def Linear(in_features, out_features, bias=True):
     return m
 
 
-@register_model_architecture('autoencoder', 'transformer')
+@register_model_architecture('autoencoder', 'autoencoder')
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, 'encoder_embed_path', None)
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
@@ -764,7 +766,7 @@ def base_architecture(args):
     args.layernorm_embedding = getattr(args, 'layernorm_embedding', False)
 
 
-@register_model_architecture('autoencoder', 'transformer_iwslt_de_en')
+@register_model_architecture('autoencoder', 'autoencoder_iwslt_de_en')
 def transformer_iwslt_de_en(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1024)
@@ -777,13 +779,13 @@ def transformer_iwslt_de_en(args):
     base_architecture(args)
 
 
-@register_model_architecture('autoencoder', 'transformer_wmt_en_de')
+@register_model_architecture('autoencoder', 'autoencoder_wmt_en_de')
 def transformer_wmt_en_de(args):
     base_architecture(args)
 
 
 # parameters used in the "Attention Is All You Need" paper (Vaswani et al., 2017)
-@register_model_architecture('autoencoder', 'transformer_vaswani_wmt_en_de_big')
+@register_model_architecture('autoencoder', 'autoencoder_vaswani_wmt_en_de_big')
 def transformer_vaswani_wmt_en_de_big(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1024)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 4096)
@@ -796,20 +798,20 @@ def transformer_vaswani_wmt_en_de_big(args):
     base_architecture(args)
 
 
-@register_model_architecture('autoencoder', 'transformer_vaswani_wmt_en_fr_big')
+@register_model_architecture('autoencoder', 'autoencoder_vaswani_wmt_en_fr_big')
 def transformer_vaswani_wmt_en_fr_big(args):
     args.dropout = getattr(args, 'dropout', 0.1)
     transformer_vaswani_wmt_en_de_big(args)
 
 
-@register_model_architecture('autoencoder', 'transformer_wmt_en_de_big')
+@register_model_architecture('autoencoder', 'autoencoder_wmt_en_de_big')
 def transformer_wmt_en_de_big(args):
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
     transformer_vaswani_wmt_en_de_big(args)
 
 
 # default parameters used in tensor2tensor implementation
-@register_model_architecture('autoencoder', 'transformer_wmt_en_de_big_t2t')
+@register_model_architecture('autoencoder', 'autoencoder_wmt_en_de_big_t2t')
 def transformer_wmt_en_de_big_t2t(args):
     args.encoder_normalize_before = getattr(args, 'encoder_normalize_before', True)
     args.decoder_normalize_before = getattr(args, 'decoder_normalize_before', True)

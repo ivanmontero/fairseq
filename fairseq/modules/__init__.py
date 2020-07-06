@@ -5,7 +5,6 @@
 
 from .adaptive_input import AdaptiveInput
 from .adaptive_softmax import AdaptiveSoftmax
-from .autoencoder import AutoencoderDecoderLayer
 from .beamable_mm import BeamableMM
 from .character_token_embedder import CharacterTokenEmbedder
 from .conv_tbc import ConvTBC
@@ -27,6 +26,7 @@ from .sinusoidal_positional_embedding import SinusoidalPositionalEmbedding
 from .transformer_sentence_encoder_layer import TransformerSentenceEncoderLayer
 from .transformer_sentence_encoder import TransformerSentenceEncoder
 from .unfold import unfold1d
+from .autoencoder import AutoencoderDecoderLayer
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .vggblock import VGGBlock
 

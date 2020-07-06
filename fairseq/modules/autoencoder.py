@@ -1,30 +1,8 @@
-from collections import namedtuple
-import math
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from fairseq import options, utils
-from fairseq.models import (
-    FairseqEncoder,
-    FairseqIncrementalDecoder,
-    FairseqEncoderDecoderModel,
-    register_model,
-    register_model_architecture,
-)
-from fairseq.modules import (
-    AdaptiveSoftmax,
-    LayerNorm,
-    PositionalEmbedding,
-    SinusoidalPositionalEmbedding,
-    TransformerDecoderLayer,
-    TransformerEncoderLayer,
-)
-import random
-
-DEFAULT_MAX_SOURCE_POSITIONS = 1024
-DEFAULT_MAX_TARGET_POSITIONS = 1024
+from fairseq import utils
+from fairseq.modules import LayerNorm, MultiheadAttention
 
 class AutoencoderDecoderLayer(nn.Module):
     """Decoder layer block.
@@ -95,7 +73,7 @@ class AutoencoderDecoderLayer(nn.Module):
 
         self.autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', self.embed_dim) # autoencoder_hidden_size
         self.proj_v = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
-        self.proj_gh = nn.Linear(self.hidden_size, self.embed_dim)
+        self.proj_gh = nn.Linear(self.embed_dim, self.embed_dim)
         self.proj_gz = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
 
 
@@ -172,7 +150,7 @@ class AutoencoderDecoderLayer(nn.Module):
 
 
             bottleneck_expanded = bottleneck_out.expand_as(x)
-            x = torch.sigmoid(self.proj_gh(hidden_states) + self.proj_gz(bottleneck_expanded)) * self.proj_v(bottleneck_expanded)
+            x = torch.sigmoid(self.proj_gh(x) + self.proj_gz(bottleneck_expanded)) * self.proj_v(bottleneck_expanded)
             #         return (output,)
             # if prev_attn_state is not None:
             #     if incremental_state is None:
@@ -248,3 +226,10 @@ class AutoencoderDecoderLayer(nn.Module):
 #         z_expand = encoder_hidden_states.expand_as(hidden_states)
 #         output = torch.sigmoid(self.proj_gh(hidden_states) + self.proj_gz(z_expand)) * self.proj_v(z_expand)
 #         return (output,)
+
+def Linear(in_features, out_features, bias=True):
+    m = nn.Linear(in_features, out_features, bias)
+    nn.init.xavier_uniform_(m.weight)
+    if bias:
+        nn.init.constant_(m.bias, 0.)
+    return m
