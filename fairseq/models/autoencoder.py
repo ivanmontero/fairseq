@@ -355,7 +355,7 @@ class AutoencoderEncoder(FairseqEncoder):
             if return_all_hiddens:
                 encoder_states[-1] = x
         
-        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:])[0]
+        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0]
         # self.bottleneck(bert_hidden[:,0,:], bert_hidden[:,1:,:], attention_mask=attention_mask[:,1:])
 
         return AutoencoderEncoderOut(
