@@ -24,6 +24,7 @@ class AutoencoderDecoderLayer(nn.Module):
     def __init__(self, args, no_encoder_attn=False, add_bias_kv=False, add_zero_attn=False):
         super().__init__()
         self.embed_dim = args.decoder_embed_dim
+        self.autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', self.embed_dim) # autoencoder_hidden_size
         self.cross_self_attention = getattr(args, 'cross_self_attention', False)
         self.self_attn = MultiheadAttention(
             embed_dim=self.embed_dim,
@@ -53,14 +54,9 @@ class AutoencoderDecoderLayer(nn.Module):
             self.encoder_attn = None
             self.encoder_attn_layer_norm = None
         else:
-            self.encoder_attn = MultiheadAttention(
-                self.embed_dim,
-                args.decoder_attention_heads,
-                kdim=getattr(args, 'encoder_embed_dim', None),
-                vdim=getattr(args, 'encoder_embed_dim', None),
-                dropout=args.attention_dropout,
-                encoder_decoder_attention=True,
-            )
+            self.proj_v = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
+            self.proj_gh = nn.Linear(self.embed_dim, self.embed_dim)
+            self.proj_gz = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
             self.encoder_attn_layer_norm = LayerNorm(self.embed_dim, export=export)
 
         self.fc1 = Linear(self.embed_dim, args.decoder_ffn_embed_dim)
@@ -70,11 +66,6 @@ class AutoencoderDecoderLayer(nn.Module):
         self.need_attn = True
 
         self.onnx_trace = False
-
-        self.autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', self.embed_dim) # autoencoder_hidden_size
-        self.proj_v = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
-        self.proj_gh = nn.Linear(self.embed_dim, self.embed_dim)
-        self.proj_gz = nn.Linear(self.autoencoder_hidden_size, self.embed_dim)
 
 
     def prepare_for_onnx_export_(self):
@@ -144,7 +135,7 @@ class AutoencoderDecoderLayer(nn.Module):
         x = residual + x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
-        if self.encoder_attn is not None:
+        if self.encoder_attn_layer_norm is not None:
             residual = x
             x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, before=True)
 
