@@ -363,7 +363,7 @@ class AutoencoderEncoder(FairseqEncoder):
             encoder_padding_mask=encoder_padding_mask,  # B x T
             encoder_embedding=encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
-            bottleneck_out=bottleneck_out,
+            bottleneck_out=bottleneck_out, # B x C
         )
 
     def reorder_encoder_out(self, encoder_out, new_order):
@@ -471,11 +471,17 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         self.cross_self_attention = getattr(args, 'cross_self_attention', False)
         self.layer_wise_attention = getattr(args, 'layer_wise_attention', False)
 
+        self.cls_input = getattr(args, 'cls_input', False)
+
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            AutoencoderDecoderLayer(args, no_encoder_attn)
+            AutoencoderDecoderLayer(args, no_encoder_attn or self.cls_input)
             for _ in range(args.decoder_layers)
         ])
+
+        if self.cls_input:
+            autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', self.embed_dim)
+            self.hidden2input = None if autoencoder_hidden_size == embed_dim else Linear(autoencoder_hidden_size, embed_dim)
 
         self.adaptive_softmax = None
 
@@ -595,6 +601,10 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
             x = self.layernorm_embedding(x)
 
         x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if self.cls_input and encoder_out is not None:
+            h = encoder_out.bottleneck_out if self.hidden2input is None else self.hidden2input(encoder_out.bottleneck_out)
+            x[:,0,:] = h
 
         # B x T x C -> T x B x C
         x = x.transpose(0, 1)
@@ -764,6 +774,13 @@ def base_architecture(args):
 
     args.no_scale_embedding = getattr(args, 'no_scale_embedding', False)
     args.layernorm_embedding = getattr(args, 'layernorm_embedding', False)
+
+    args.cls_input = getattr(args, 'cls_input', False)
+
+@register_model_architecture('autoencoder', 'autoencoder_cls_input')
+def transformer_wmt_en_de(args):
+    args.cls_input = getattr(args, 'cls_input', True)
+    base_architecture(args)
 
 
 @register_model_architecture('autoencoder', 'autoencoder_iwslt_de_en')
