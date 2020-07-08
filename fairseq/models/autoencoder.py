@@ -480,7 +480,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         ])
 
         if self.cls_input:
-            autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', self.embed_dim)
+            autoencoder_hidden_size = getattr(args, 'autoencoder_hidden_size', embed_dim)
             self.hidden2input = None if autoencoder_hidden_size == embed_dim else Linear(autoencoder_hidden_size, embed_dim)
 
         self.adaptive_softmax = None
