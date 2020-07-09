@@ -174,7 +174,7 @@ class Autoencoder(FairseqEncoderDecoderModel):
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
         # autoencoder args
-        parser.add_argument('--cls-input', default=False, action='store_true',
+        parser.add_argument('--cls-input', action='store_true',
                             help='use cls input')
         parser.add_argument('--autoencoder-hidden-size', type=int,
                             help='The hidden size of the autoencoder')
