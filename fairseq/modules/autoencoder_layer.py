@@ -205,7 +205,7 @@ class AutoencoderDecoderLayer(nn.Module):
             if self.normalize_before:
                 x = self.encoder_attn_layer_norm(x)
         
-            bottleneck_expanded = bottleneck_out.expand_as(x)
+            bottleneck_expanded = bottleneck_out.unsqueeze(0).expand_as(x)
             x = torch.sigmoid(self.proj_gh(x) + self.proj_gz(bottleneck_expanded)) * self.proj_v(bottleneck_expanded)
             # if prev_attn_state is not None:
             #     prev_key, prev_value = prev_attn_state[:2]

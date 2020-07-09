@@ -30,7 +30,7 @@ from .sinusoidal_positional_embedding import SinusoidalPositionalEmbedding
 from .transformer_sentence_encoder_layer import TransformerSentenceEncoderLayer
 from .transformer_sentence_encoder import TransformerSentenceEncoder
 from .unfold import unfold1d
-from .autoencoder import AutoencoderDecoderLayer
+from .autoencoder_layer import AutoencoderDecoderLayer
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .vggblock import VGGBlock
 

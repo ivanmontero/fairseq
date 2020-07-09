@@ -443,7 +443,7 @@ class AutoencoderEncoder(FairseqEncoder):
         if self.layer_norm is not None:
             x = self.layer_norm(x)
 
-        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0]
+        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0].squeeze(0)
 
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
