@@ -22,6 +22,7 @@ from fairseq.data import (
     PrependTokenDataset,
     StripTokenDataset,
     TruncateDataset,
+    MaskTokensDataset,
 )
 
 from fairseq.tasks import FairseqTask, register_task
@@ -40,7 +41,8 @@ def load_langpair_dataset(
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
     truncate_source=False, append_source_id=False,
-    num_buckets=0,
+    num_buckets=0, mask_words=False, mask_prob=0.15, leave_unmasked_prob=0.1,
+    random_token_prob=0.1,src_mask_idx=None,seed=None
 ):
 
     def split_exists(split, src, tgt, lang, data_path):
@@ -119,6 +121,18 @@ def load_langpair_dataset(
         if indexed_dataset.dataset_exists(align_path, impl=dataset_impl):
             align_dataset = data_utils.load_indexed_dataset(align_path, None, dataset_impl)
 
+    if mask_words:
+        src_dataset = MaskTokensDataset.apply_mask(
+            src_dataset,
+            src_dict,
+            pad_idx=src_dict.pad(),
+            mask_idx=src_mask_idx,
+            seed=seed,
+            mask_prob=mask_prob,
+            leave_unmasked_prob=leave_unmasked_prob,
+            random_token_prob=random_token_prob,
+        )[0]
+
     tgt_dataset_sizes = tgt_dataset.sizes if tgt_dataset is not None else None
     return LanguagePairDataset(
         src_dataset, src_dataset.sizes, src_dict,
@@ -128,7 +142,6 @@ def load_langpair_dataset(
         align_dataset=align_dataset, eos=eos,
         num_buckets=num_buckets,
     )
-
 
 @register_task('translation')
 class TranslationTask(FairseqTask):
@@ -200,12 +213,27 @@ class TranslationTask(FairseqTask):
                                  'e.g., \'{"beam": 4, "lenpen": 0.6}\'')
         parser.add_argument('--eval-bleu-print-samples', action='store_true',
                             help='print sample generations during validation')
+        
+        # options for noise
+        parser.add_argument('--mask-words', default=False, action='store_true',
+                            help='whether to use MLM input or not')
+        parser.add_argument('--mask-prob', default=0.15, type=float,
+                            help='probability of replacing a token with mask')
+        parser.add_argument('--leave-unmasked-prob', default=0.1, type=float,
+                            help='probability that a masked token is unmasked')
+        parser.add_argument('--random-token-prob', default=0.1, type=float,
+                            help='probability of replacing a token with a random token')
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
         super().__init__(args)
         self.src_dict = src_dict
         self.tgt_dict = tgt_dict
+        self.seed = args.seed
+
+        # add mask token
+        self.src_mask_idx = src_dict.add_symbol('<mask>')
+        self.tgt_mask_idx = tgt_dict.add_symbol('<mask>')
 
     @classmethod
     def setup_task(cls, args, **kwargs):
@@ -260,7 +288,16 @@ class TranslationTask(FairseqTask):
             load_alignments=self.args.load_alignments,
             truncate_source=self.args.truncate_source,
             num_buckets=self.args.num_batch_buckets,
+            mask_words=self.args.mask_prob,
+            mask_prob=self.args.mask_prob,
+            leave_unmasked_prob=self.args.leave_unmasked_prob,
+            random_token_prob=self.args.random_token_prob,
+            src_mask_idx=self.src_mask_idx,
+            seed=self.seed,
         )
+#             num_buckets=0, mask_words=False, mask_prob=0.15, leave_unmasked_prob=0.1,
+#     random_token_prob=0.1,src_dict=None,src_pad_idx=None,src_mask_idx=None,seed=None
+# ):
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):
         return LanguagePairDataset(src_tokens, src_lengths, self.source_dictionary)
