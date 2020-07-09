@@ -480,6 +480,11 @@ class AutoencoderEncoder(FairseqEncoder):
             if encoder_out.encoder_out is None
             else encoder_out.encoder_out.index_select(1, new_order)
         )
+        new_bottleneck_out = (
+            encoder_out.bottleneck_out
+            if encoder_out.bottleneck_out is None
+            else encoder_out.bottleneck_out.index_select(0, new_order)
+        )
         new_encoder_padding_mask = (
             encoder_padding_mask
             if encoder_padding_mask is None
@@ -510,7 +515,7 @@ class AutoencoderEncoder(FairseqEncoder):
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
-            bottleneck_out=encoder_out.bottleneck_out
+            bottleneck_out=new_bottleneck_out,
         )
 
     def max_positions(self):
@@ -783,9 +788,6 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         # grab hidden representation
         if encoder_out is not None:
             h = encoder_out.bottleneck_out if self.hidden2input is None else self.hidden2input(encoder_out.bottleneck_out)
-            if h.shape[0] != prev_output_tokens.shape[0]:
-                assert prev_output_tokens.shape[0] % h.shape[0] == 0
-                h = h.repeat(prev_output_tokens.shape[0] // h.shape[0], 1)
         else:
             h = None
 
