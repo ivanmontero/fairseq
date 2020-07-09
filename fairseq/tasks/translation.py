@@ -39,7 +39,8 @@ def load_langpair_dataset(
     combine, dataset_impl, upsample_primary,
     left_pad_source, left_pad_target, max_source_positions,
     max_target_positions, prepend_bos=False, load_alignments=False,
-    truncate_source=False, append_source_id=False
+    truncate_source=False, append_source_id=False,
+    num_buckets=0,
 ):
 
     def split_exists(split, src, tgt, lang, data_path):
@@ -124,9 +125,8 @@ def load_langpair_dataset(
         tgt_dataset, tgt_dataset_sizes, tgt_dict,
         left_pad_source=left_pad_source,
         left_pad_target=left_pad_target,
-        max_source_positions=max_source_positions,
-        max_target_positions=max_target_positions,
-        align_dataset=align_dataset, eos=eos
+        align_dataset=align_dataset, eos=eos,
+        num_buckets=num_buckets,
     )
 
 
@@ -176,19 +176,23 @@ class TranslationTask(FairseqTask):
                             help='amount to upsample primary dataset')
         parser.add_argument('--truncate-source', action='store_true', default=False,
                             help='truncate source to max-source-positions')
+        parser.add_argument('--num-batch-buckets', default=0, type=int, metavar='N',
+                            help='if >0, then bucket source and target lengths into N '
+                                 'buckets and pad accordingly; this is useful on TPUs '
+                                 'to minimize the number of compilations')
 
         # options for reporting BLEU during validation
         parser.add_argument('--eval-bleu', action='store_true',
                             help='evaluation with BLEU scores')
         parser.add_argument('--eval-bleu-detok', type=str, default="space",
-                            help='detokenizer before computing BLEU (e.g., "moses"); '
+                            help='detokenize before computing BLEU (e.g., "moses"); '
                                  'required if using --eval-bleu; use "space" to '
                                  'disable detokenization; see fairseq.data.encoders '
                                  'for other options')
         parser.add_argument('--eval-bleu-detok-args', type=str, metavar='JSON',
                             help='args for building the tokenizer, if needed')
         parser.add_argument('--eval-tokenized-bleu', action='store_true', default=False,
-                            help='if setting, we compute tokenized BLEU instead of sacrebleu')
+                            help='compute tokenized BLEU instead of sacrebleu')
         parser.add_argument('--eval-bleu-remove-bpe', nargs='?', const='@@ ', default=None,
                             help='remove BPE before computing BLEU')
         parser.add_argument('--eval-bleu-args', type=str, metavar='JSON',
@@ -255,6 +259,7 @@ class TranslationTask(FairseqTask):
             max_target_positions=self.args.max_target_positions,
             load_alignments=self.args.load_alignments,
             truncate_source=self.args.truncate_source,
+            num_buckets=self.args.num_batch_buckets,
         )
 
     def build_dataset_for_inference(self, src_tokens, src_lengths):
@@ -351,7 +356,14 @@ class TranslationTask(FairseqTask):
             s = self.tgt_dict.string(
                 toks.int().cpu(),
                 self.args.eval_bleu_remove_bpe,
-                escape_unk=escape_unk,
+                # The default unknown string in fairseq is `<unk>`, but
+                # this is tokenized by sacrebleu as `< unk >`, inflating
+                # BLEU scores. Instead, we use a somewhat more verbose
+                # alternative that is unlikely to appear in the real
+                # reference, but doesn't get split into multiple tokens.
+                unk_string=(
+                    "UNKNOWNTOKENINREF" if escape_unk else "UNKNOWNTOKENINHYP"
+                ),
             )
             if self.tokenizer:
                 s = self.tokenizer.decode(s)

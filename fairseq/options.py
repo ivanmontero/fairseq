@@ -32,6 +32,7 @@ def get_training_parser(default_task="translation"):
 def get_generation_parser(interactive=False, default_task="translation"):
     parser = get_parser("Generation", default_task)
     add_dataset_args(parser, gen=True)
+    add_distributed_training_args(parser)
     add_generation_args(parser)
     if interactive:
         add_interactive_args(parser)
@@ -45,7 +46,7 @@ def get_interactive_generation_parser(default_task="translation"):
 def get_eval_lm_parser(default_task="language_modeling"):
     parser = get_parser("Evaluate Language Model", default_task)
     add_dataset_args(parser, gen=True)
-    add_distributed_training_args(parser)
+    add_distributed_training_args(parser, default_world_size=1)
     add_eval_lm_args(parser)
     return parser
 
@@ -53,6 +54,7 @@ def get_eval_lm_parser(default_task="language_modeling"):
 def get_validation_parser(default_task=None):
     parser = get_parser("Validation", default_task)
     add_dataset_args(parser, train=True)
+    add_distributed_training_args(parser, default_world_size=1)
     group = parser.add_argument_group("Evaluation")
     add_common_eval_args(group)
     return parser
@@ -177,6 +179,20 @@ def parse_args_and_arch(
         args.max_tokens_valid = args.max_tokens
     if getattr(args, "memory_efficient_fp16", False):
         args.fp16 = True
+    if getattr(args, "memory_efficient_bf16", False):
+        args.bf16 = True
+    args.tpu = getattr(args, "tpu", False)
+    args.bf16 = getattr(args, "bf16", False)
+    if args.bf16:
+        args.tpu = True
+    if args.tpu and args.fp16:
+        raise ValueError("Cannot combine --fp16 and --tpu, use --bf16 on TPUs")
+
+    if getattr(args, "seed", None) is None:
+        args.seed = 1  # default seed for training
+        args.no_seed_provided = True
+    else:
+        args.no_seed_provided = False
 
     # Apply architecture configuration.
     if hasattr(args, "arch"):
@@ -206,10 +222,14 @@ def get_parser(desc, default_task="translation"):
     parser.add_argument('--tensorboard-logdir', metavar='DIR', default='',
                         help='path to save logs for tensorboard, should match --logdir '
                              'of running tensorboard (default: no tensorboard logging)')
-    parser.add_argument('--seed', default=1, type=int, metavar='N',
+    parser.add_argument('--seed', default=None, type=int, metavar='N',
                         help='pseudo random number generator seed')
     parser.add_argument('--cpu', action='store_true', help='use CPU instead of CUDA')
+    parser.add_argument('--tpu', action='store_true', help='use TPU instead of CUDA')
+    parser.add_argument('--bf16', action='store_true', help='use bfloat16; implies --tpu')
     parser.add_argument('--fp16', action='store_true', help='use FP16')
+    parser.add_argument('--memory-efficient-bf16', action='store_true',
+                        help='use a memory-efficient version of BF16 training; implies --bf16')
     parser.add_argument('--memory-efficient-fp16', action='store_true',
                         help='use a memory-efficient version of FP16 training; implies --fp16')
     parser.add_argument('--fp16-no-flatten-grads', action='store_true',
@@ -230,12 +250,14 @@ def get_parser(desc, default_task="translation"):
                         help='how often to clear the PyTorch CUDA cache (0 to disable)')
     parser.add_argument('--all-gather-list-size', default=16384, type=int,
                         help='number of bytes reserved for gathering stats from workers')
-
     parser.add_argument('--model-parallel-size', type=int, metavar='N',
                         default=1,
                         help='total number of GPUs to parallelize model over')
     parser.add_argument('--checkpoint-suffix', default='',
-                        help='Suffix to add to the checkpoint file name')
+                        help='suffix to add to the checkpoint file name')
+    parser.add_argument('--quantization-config-path', default=None,
+                        help='path to quantization config file')
+    parser.add_argument('--profile', action='store_true', help='enable autograd profiler emit_nvtx')
 
     from fairseq.registry import REGISTRIES
     for registry_name, REGISTRY in REGISTRIES.items():
@@ -312,10 +334,13 @@ def add_dataset_args(parser, train=False, gen=False):
     group.add_argument('--max-sentences', '--batch-size', type=int, metavar='N',
                        help='maximum number of sentences in a batch')
     group.add_argument('--required-batch-size-multiple', default=8, type=int, metavar='N',
-                       help='batch size will be a multiplier of this value')
+                       help='batch size will either be less than this value, '
+                            'or a multiple of this value')
     parser.add_argument('--dataset-impl', metavar='FORMAT',
                         choices=get_available_dataset_impl(),
                         help='output dataset implementation')
+    group.add_argument('--data-buffer-size', default=10, type=int, metavar='N',
+                        help='number of batches to preload')
     if train:
         group.add_argument('--train-subset', default='train', metavar='SPLIT',
                            help='data subset to use for training (e.g. train, valid, test)')
@@ -347,11 +372,13 @@ def add_dataset_args(parser, train=False, gen=False):
     return group
 
 
-def add_distributed_training_args(parser):
+def add_distributed_training_args(parser, default_world_size=None):
     group = parser.add_argument_group("Distributed training")
     # fmt: off
+    if default_world_size is None:
+        default_world_size = max(1, torch.cuda.device_count())
     group.add_argument('--distributed-world-size', type=int, metavar='N',
-                       default=max(1, torch.cuda.device_count()),
+                       default=default_world_size,
                        help='total number of GPUs across all nodes (default: all visible GPUs)')
     group.add_argument('--distributed-rank', default=0, type=int,
                        help='rank of the current worker')
@@ -388,6 +415,23 @@ def add_distributed_training_args(parser):
     group.add_argument('--broadcast-buffers', default=False, action='store_true',
                        help='Copy non-trainable parameters between GPUs, such as '
                       'batchnorm population statistics')
+
+    group.add_argument('--distributed-wrapper', default='DDP', type=str,
+                       choices=['DDP', 'SlowMo'],
+                       help='DistributedDataParallel backend')
+    # Add arguments for SlowMo - these will be used when SlowMo is enabled via above
+    group.add_argument('--slowmo-momentum', default=None, type=float,
+                       help='SlowMo momentum term; by default use 0.0 for 16 GPUs, '
+                            '0.2 for 32 GPUs; 0.5 for 64 GPUs, 0.6 for > 64 GPUs')
+    group.add_argument('--slowmo-algorithm', default='LocalSGD', choices=['LocalSGD', 'SGP'],
+                       help='whether to use LocalSGD or SGP')
+    group.add_argument('--localsgd-frequency', default=3, type=int,
+                       help='Local SGD allreduce frequency')
+    group.add_argument('--nprocs-per-node', type=int, metavar='N',
+                       default=max(1, torch.cuda.device_count()),
+                       help='number of GPUs in each node. An allreduce operation across GPUs in '
+                            'a node is very fast. Hence, we do allreduce across GPUs in a node, '
+                            'and gossip across different nodes')
     # fmt: on
     return group
 
@@ -399,7 +443,7 @@ def add_optimization_args(parser):
                        help='force stop training at specified epoch')
     group.add_argument('--max-update', '--mu', default=0, type=int, metavar='N',
                        help='force stop training at specified update')
-    group.add_argument('--clip-norm', default=25, type=float, metavar='NORM',
+    group.add_argument('--clip-norm', default=0.0, type=float, metavar='NORM',
                        help='clip threshold of gradients')
     group.add_argument('--sentence-avg', action='store_true',
                        help='normalize gradients by the number of sentences in a batch'
@@ -569,6 +613,11 @@ def add_generation_args(parser):
                        help='if set, the last checkpoint are assumed to be a reranker to rescore the translations'),
     group.add_argument('--retain-iter-history', action='store_true',
                        help='if set, decoding returns the whole history of iterative refinement')
+    group.add_argument('--retain-dropout', action='store_true',
+                       help='Use dropout at inference time')
+    group.add_argument('--retain-dropout-modules', default=None, nargs='+', type=str,
+                       help='if set, only retain dropout for the specified modules; '
+                            'if not set, then dropout will be retained for all modules')
 
     # special decoding format for advanced decoding.
     group.add_argument('--decoding-format', default=None, type=str, choices=['unigram', 'ensemble', 'vote', 'dp', 'bs'])

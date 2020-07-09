@@ -116,7 +116,7 @@ class FairseqTask(object):
         num_shards=1,
         shard_id=0,
         num_workers=0,
-        epoch=1,
+        epoch=1
     ):
         """
         Get an iterator that yields batches of data from the given dataset.
@@ -173,9 +173,8 @@ class FairseqTask(object):
             )
 
         # create mini-batches with given size constraints
-        batch_sampler = data_utils.batch_by_size(
+        batch_sampler = dataset.batch_by_size(
             indices,
-            dataset.num_tokens,
             max_tokens=max_tokens,
             max_sentences=max_sentences,
             required_batch_size_multiple=required_batch_size_multiple,
@@ -191,6 +190,7 @@ class FairseqTask(object):
             shard_id=shard_id,
             num_workers=num_workers,
             epoch=epoch,
+            buffer_size=getattr(self.args, 'data_buffer_size', 0)
         )
         self.dataset_to_epoch_iter[dataset] = epoch_iter
         return epoch_iter
@@ -206,9 +206,12 @@ class FairseqTask(object):
         Returns:
             a :class:`~fairseq.models.BaseFairseqModel` instance
         """
-        from fairseq import models
-
-        return models.build_model(args, self)
+        from fairseq import models, quantization_utils
+        model = models.build_model(args, self)
+        if getattr(args, 'tpu', False):
+            model.prepare_for_tpu_()
+        model = quantization_utils.quantize_model_scalar(model, args)
+        return model
 
     def build_criterion(self, args):
         """
@@ -335,10 +338,12 @@ class FairseqTask(object):
         """
         model.train()
         model.set_num_updates(update_num)
-        loss, sample_size, logging_output = criterion(model, sample)
+        with torch.autograd.profiler.record_function("forward"):
+            loss, sample_size, logging_output = criterion(model, sample)
         if ignore_grad:
             loss *= 0
-        optimizer.backward(loss)
+        with torch.autograd.profiler.record_function("backward"):
+            optimizer.backward(loss)
         return loss, sample_size, logging_output
 
     def valid_step(self, sample, model, criterion):

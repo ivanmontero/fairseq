@@ -12,6 +12,8 @@ import math
 import os
 import sys
 
+import numpy as np
+
 import torch
 
 from fairseq import bleu, checkpoint_utils, options, tasks, utils
@@ -51,6 +53,11 @@ def _main(args, output_file):
         args.max_tokens = 12000
     logger.info(args)
 
+    # Fix seed for stochastic decoding
+    if args.seed is not None and not args.no_seed_provided:
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+
     use_cuda = torch.cuda.is_available() and not args.cpu
 
     # Load dataset splits
@@ -70,14 +77,12 @@ def _main(args, output_file):
         utils.split_paths(args.path),
         arg_overrides=eval(args.model_overrides),
         task=task,
+        suffix=getattr(args, "checkpoint_suffix", ""),
     )
 
     # Optimize ensemble for generation
     for model in models:
-        model.make_generation_fast_(
-            beamable_mm_beam_size=None if args.no_beamable_mm else args.beam,
-            need_attn=args.print_alignment,
-        )
+        model.prepare_for_inference_(args)
         if args.fp16:
             model.half()
         if use_cuda:
@@ -239,8 +244,9 @@ def _main(args, output_file):
                     if align_dict is not None or args.remove_bpe is not None:
                         # Convert back to tokens for evaluation with unk replacement and/or without BPE
                         target_tokens = tgt_dict.encode_line(target_str, add_if_not_exist=True)
+                        hypo_tokens = tgt_dict.encode_line(detok_hypo_str, add_if_not_exist=True)
                     if hasattr(scorer, 'add_string'):
-                        scorer.add_string(target_str, hypo_str)
+                        scorer.add_string(target_str, detok_hypo_str)
                     else:
                         scorer.add(target_tokens, hypo_tokens)
 
@@ -252,6 +258,11 @@ def _main(args, output_file):
     logger.info('Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} sentences/s, {:.2f} tokens/s)'.format(
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
     if has_target:
+        if args.bpe and not args.sacrebleu:
+            if args.remove_bpe:
+                logger.warning("BLEU score is being computed by splitting detokenized string on spaces, this is probably not what you want. Use --sacrebleu for standard 13a BLEU tokenization")
+            else:
+                logger.warning("If you are using BPE on the target side, the BLEU score is computed on BPE tokens, not on proper words.  Use --sacrebleu for standard 13a BLEU tokenization")
         logger.info('Generate {} with beam={}: {}'.format(args.gen_subset, args.beam, scorer.result_string()))
 
     return scorer

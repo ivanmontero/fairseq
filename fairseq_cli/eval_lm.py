@@ -19,7 +19,6 @@ from fairseq.data import LMContextWindowDataset
 from fairseq.logging import progress_bar
 from fairseq.logging.meters import StopwatchMeter, TimeMeter
 from fairseq.sequence_scorer import SequenceScorer
-from fairseq.options import add_distributed_training_args
 from fairseq import distributed_utils
 
 
@@ -105,7 +104,7 @@ def main(parsed_args, **unused_kwargs):
 
     # Optimize ensemble for generation and set the source and dest dicts on the model (required by scorer)
     for model in models:
-        model.make_generation_fast_()
+        model.prepare_for_inference_(args)
         if args.fp16:
             model.half()
         if use_cuda:
@@ -248,7 +247,6 @@ def main(parsed_args, **unused_kwargs):
 
 def cli_main():
     parser = options.get_eval_lm_parser()
-    add_distributed_training_args(parser)
     args = options.parse_args_and_arch(parser)
     distributed_utils.call_main(args, main)
 
