@@ -175,7 +175,7 @@ class Autoencoder(FairseqEncoderDecoderModel):
                             help='scalar quantization noise and scalar quantization at training time')
         # autoencoder args
         parser.add_argument('--cls-input', action='store_true',
-                            help='use cls input') # TODO: Now default
+                            help='use cls input')
         parser.add_argument('--autoencoder-hidden-size', type=int,
                             help='The hidden size of the autoencoder')
         parser.add_argument('--bottleneck-attention-heads', type=int,
@@ -617,7 +617,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
 
         self.cross_self_attention = getattr(args, "cross_self_attention", False)
 
-        self.cls_input = getattr(args, 'cls_input', True)
+        self.cls_input = getattr(args, 'cls_input', False)
 
         if self.decoder_layerdrop > 0.0:
             self.layers = LayerDropModuleList(p=self.decoder_layerdrop)
@@ -988,14 +988,14 @@ def base_architecture(args):
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
     args.tie_adaptive_weights = getattr(args, "tie_adaptive_weights", False)
 
-    args.cls_input = getattr(args, 'cls_input', True)
+    args.cls_input = getattr(args, 'cls_input', False)
     args.autoencoder_hidden_size = getattr(args, "autoencoder_hidden_size", args.encoder_embed_dim)
     args.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
     args.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.dropout)
 
-@register_model_architecture('autoencoder', 'autoencoder_enc_dec')
+@register_model_architecture('autoencoder', 'autoencoder_cls_input')
 def transformer_wmt_en_de(args):
-    args.cls_input = getattr(args, 'cls_input', False)
+    args.cls_input = getattr(args, 'cls_input', True)
     base_architecture(args)
 
 @register_model_architecture("autoencoder", "autoencoder_iwslt_de_en")
