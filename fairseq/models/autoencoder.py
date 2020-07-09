@@ -785,12 +785,6 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
             if positions is not None:
                 positions = positions[:, -1:]
 
-        # grab hidden representation
-        if encoder_out is not None:
-            h = encoder_out.bottleneck_out if self.hidden2input is None else self.hidden2input(encoder_out.bottleneck_out)
-        else:
-            h = None
-
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(prev_output_tokens)
 
@@ -809,6 +803,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         x = self.dropout_module(x)
 
         if self.cls_input and encoder_out is not None:
+            h = encoder_out.bottleneck_out if self.hidden2input is None else self.hidden2input(encoder_out.bottleneck_out)
             x[:,0,:] = h
 
         # B x T x C -> T x B x C
@@ -829,7 +824,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
 
             x, layer_attn, _ = layer(
                 x,
-                h,
+                encoder_out.bottleneck_out if encoder_out is not None else None,
                 incremental_state,
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
