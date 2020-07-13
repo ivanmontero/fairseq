@@ -30,6 +30,7 @@ from fairseq.modules import (
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
+from fairseq.models.roberta.model import RobertaLMHead
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -462,7 +463,7 @@ class AutoencoderEncoder(FairseqEncoder):
         embed_tokens (torch.nn.Embedding): input embedding
     """
 
-    def __init__(self, args, dictionary, embed_tokens):
+    def __init__(self, args, dictionary, embed_tokens): # len(dictionary)
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
 
@@ -514,6 +515,8 @@ class AutoencoderEncoder(FairseqEncoder):
             self.layernorm_embedding = LayerNorm(embed_dim)
         else:
             self.layernorm_embedding = None
+
+        self.lm_head = None if not args.masked_logits else RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -578,6 +581,8 @@ class AutoencoderEncoder(FairseqEncoder):
 
         bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0].squeeze(0)
 
+        masked_logits = None is self.lm_head is None else self.lm_head(x)
+
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
@@ -586,7 +591,7 @@ class AutoencoderEncoder(FairseqEncoder):
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
-            masked_logits=None,
+            masked_logits=masked_logits,
         )
 
     @torch.jit.export
