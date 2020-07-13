@@ -30,8 +30,6 @@ from fairseq.modules import (
 )
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
-from transformers import AutoModelWithLMHead
-
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -54,39 +52,6 @@ class Autoencoder(FairseqEncoderDecoderModel):
         :ref: fairseq.models.transformer_parser
         :prog:
     """
-
-    # @classmethod
-    # def hub_models(cls):
-    #     # fmt: off
-
-    #     def moses_subword(path):
-    #         return {
-    #             'path': path,
-    #             'tokenizer': 'moses',
-    #             'bpe': 'subword_nmt',
-    #         }
-
-    #     def moses_fastbpe(path):
-    #         return {
-    #             'path': path,
-    #             'tokenizer': 'moses',
-    #             'bpe': 'fastbpe',
-    #         }
-
-    #     return {
-    #         'transformer.wmt14.en-fr': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/wmt14.en-fr.joined-dict.transformer.tar.bz2'),
-    #         'transformer.wmt16.en-de': 'https://dl.fbaipublicfiles.com/fairseq/models/wmt16.en-de.joined-dict.transformer.tar.bz2',
-    #         'transformer.wmt18.en-de': moses_subword('https://dl.fbaipublicfiles.com/fairseq/models/wmt18.en-de.ensemble.tar.gz'),
-    #         'transformer.wmt19.en-de': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.en-de.joined-dict.ensemble.tar.gz'),
-    #         'transformer.wmt19.en-ru': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.en-ru.ensemble.tar.gz'),
-    #         'transformer.wmt19.de-en': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.de-en.joined-dict.ensemble.tar.gz'),
-    #         'transformer.wmt19.ru-en': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.ru-en.ensemble.tar.gz'),
-    #         'transformer.wmt19.en-de.single_model': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.en-de.joined-dict.single_model.tar.gz'),
-    #         'transformer.wmt19.en-ru.single_model': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.en-ru.single_model.tar.gz'),
-    #         'transformer.wmt19.de-en.single_model': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.de-en.joined-dict.single_model.tar.gz'),
-    #         'transformer.wmt19.ru-en.single_model': moses_fastbpe('https://dl.fbaipublicfiles.com/fairseq/models/wmt19.ru-en.single_model.tar.gz'),
-    #     }
-    #     # fmt: on
 
     def __init__(self, args, encoder, decoder):
         super().__init__(encoder, decoder)
@@ -183,8 +148,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
                             help='The amount of attention heads in the bottleneck')
         parser.add_argument('--bottleneck-dropout', type=float,
                             help='the amount of dropout in the bottleneck')
-        parser.add_argument('--huggingface-model', type=str, default=None,
-                            help="The huggingface model to make the encoder")
+        parser.add_argument('--roberta-model', type=str,
+                            help="The roberta model to make the encoder")
         # fmt: on
 
     @classmethod
@@ -233,8 +198,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
             )
 
         encoder = cls.build_encoder(args, src_dict, encoder_embed_tokens)
-        if args.share_all_embeddings and args.huggingface_model is not None:
-            decoder_embed_tokens = encoder.model.embeddings.word_embeddings
+        if args.share_all_embeddings and args.roberta_model is not None:
+            decoder_embed_tokens = encoder.roberta.sentence_encoder.embed_tokens
         decoder = cls.build_decoder(args, tgt_dict, decoder_embed_tokens)
         return cls(args, encoder, decoder)
 
@@ -252,8 +217,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_encoder(cls, args, src_dict, embed_tokens):
-        if args.huggingface_model is not None:
-            return HuggingfaceEncoder(args, src_dict)
+        if args.roberta_model is not None:
+            return RobertaEncoder(args, src_dict, embed_tokens)
         else:
             return AutoencoderEncoder(args, src_dict, embed_tokens)
 
@@ -328,7 +293,7 @@ AutoencoderEncoderOut = NamedTuple(
 )
 
 # Change to roberta
-class HuggingfaceEncoder(FairseqEncoder):
+class RobertaEncoder(FairseqEncoder):
     """
     Transformer encoder consisting of *args.encoder_layers* layers. Each layer
     is a :class:`TransformerEncoderLayer`.
@@ -347,13 +312,11 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
 
-        self.embed_tokens = embed_tokens
+        self.embed_tokens = None
 
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
-        self.model_for_mlm = AutoModelWithLMHead.from_pretrained(args.huggingface_model)
-        self.model = model_for_mlm.bert
-        self.embeddings = self.model.embeddings.word_embeddings
+        self.roberta = torch.hub.load('pytorch/fairseq', args.roberta_model).model.encoder
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -386,19 +349,23 @@ class HuggingfaceEncoder(FairseqEncoder):
         """
 
         # # compute padding mask
-        attention_mask = src_tokens != self.padding_idx
+        x, extra = self.roberta(src_tokens, features_only=True, return_all_hiddens=True)
+        hidden_states = extra["inner_states"]
+        # attention_mask = src_tokens != self.padding_idx
+        encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
-        x, pooler_output, hidden_states = self.model(input_ids=x, attention_mask=attention_mask.float(), output_hidden_states=True)
+        # x, pooler_output, hidden_states = self.model(input_ids=x, attention_mask=attention_mask.float(), output_hidden_states=True)
 
-        masked_logits = self.model_for_mlm.cls(x)[0].transpose(0, 1)
+        # masked_logits = self.model_for_mlm.cls(x)[0].transpose(0, 1)
+        masked_logits = self.roberta.output_layer(x)
 
         x = x.transpose(0, 1)
 
-        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0].squeeze(0)
+        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:])[0].squeeze(0)
 
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
-            encoder_padding_mask=(attention_mask == False),  # B x T
+            encoder_padding_mask=encoder_padding_mask,  # B x T
             encoder_embedding=hidden_states[0],  # B x T x C
             encoder_states=hidden_states,  # List[T x B x C]
             src_tokens=None,
@@ -479,9 +446,7 @@ class HuggingfaceEncoder(FairseqEncoder):
 
     def max_positions(self):
         """Maximum input length supported by the encoder."""
-        if self.embed_positions is None:
-            return self.max_source_positions
-        return min(self.max_source_positions, self.embed_positions.max_positions)
+        return self.max_source_positions
 
     def upgrade_state_dict_named(self, state_dict, name):
         return state_dict
@@ -1162,11 +1127,17 @@ def base_architecture(args):
     args.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
     args.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.dropout)
 
-    args.huggingface_model = getattr(args, "huggingface_model", None)
+    args.roberta_model = getattr(args, "roberta_model", None)
 
 @register_model_architecture('autoencoder', 'autoencoder_cls_input')
 def transformer_wmt_en_de(args):
     args.cls_input = getattr(args, 'cls_input', True)
+    base_architecture(args)
+
+@register_model_architecture('autoencoder', 'autoencoder_roberta_base')
+def transformer_wmt_en_de(args):
+    args.roberta_model = getattr(args, 'roberta_model', "roberta.base")
+    args.encoder_embed_dim = 768
     base_architecture(args)
 
 @register_model_architecture("autoencoder", "autoencoder_iwslt_de_en")
