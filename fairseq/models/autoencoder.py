@@ -647,6 +647,12 @@ class AutoencoderEncoder(FairseqEncoder):
             for idx, state in enumerate(encoder_states):
                 encoder_states[idx] = state.index_select(1, new_order)
 
+        new_masked_logits = (
+            encoder_out.masked_logits
+            if encoder_out.masked_logits is None
+            else encoder_out.masked_logits.index_select(1, new_order)
+        )
+
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
@@ -655,6 +661,7 @@ class AutoencoderEncoder(FairseqEncoder):
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
             bottleneck_out=new_bottleneck_out,
+            masked_logits=new_masked_logits,
         )
 
     def max_positions(self):
