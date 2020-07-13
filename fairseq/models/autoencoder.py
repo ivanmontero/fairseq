@@ -516,7 +516,7 @@ class AutoencoderEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
-        self.lm_head = None if not args.masked_logits else RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
+        self.lm_head = None if not args.mask_words else RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
