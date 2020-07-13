@@ -105,7 +105,7 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_scalar('nll_loss', nll_loss_sum / ntokens / math.log(2), ntokens, round=3)
-        metrics.log_scalar('masked_loss', masked_loss_sum / ntokens / math.log(2), ntokens, round=3)
+        metrics.log_scalar('masked_loss', masked_loss_sum / sample_size / math.log(2), sample_size, round=3)
         metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
 
     @staticmethod
