@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import math
+import torch
 
 from fairseq import metrics, utils, modules
 from fairseq.criterions import FairseqCriterion, register_criterion
@@ -31,12 +32,13 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
 
 @register_criterion('autoencoder_label_smoothed_cross_entropy_with_masked_lm')
 class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion):
-
-    def __init__(self, task, sentence_avg, label_smoothing, lambda_masked):
+# leave-unmasked-prob
+    def __init__(self, task, sentence_avg, label_smoothing, lambda_masked, leave_unmasked_prob):
         super().__init__(task)
         self.sentence_avg = sentence_avg
         self.eps = label_smoothing
         self.lambda_masked = lambda_masked
+        self.leave_unmasked_prob = leave_unmasked_prob
 
     @staticmethod
     def add_args(parser):
@@ -65,6 +67,7 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
         tgt = sample['target']
         masked_logits = net_output[1]["masked_encoder_logits"]
         masked_idx = src != tgt
+        masked_idx = masked_idx | (torch.rand(*masked_idx.shape, device=masked_idx.device) < self.leave_unmasked_prob)
         masked_loss = modules.cross_entropy(
             masked_logits[masked_idx,:].view(-1, masked_logits.size(-1)),
             tgt[masked_idx].view(-1),

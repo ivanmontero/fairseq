@@ -1138,6 +1138,10 @@ def transformer_wmt_en_de(args):
 def transformer_wmt_en_de(args):
     args.roberta_model = getattr(args, 'roberta_model', "roberta.base")
     args.encoder_embed_dim = 768
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 12)
+    args.decoder_layers = getattr(args, "decoder_layers", 6)
+    args.decoder_embed_dim = 768
+    args.decoder_ffn_embed_dim = 768*4
     base_architecture(args)
 
 @register_model_architecture("autoencoder", "autoencoder_iwslt_de_en")
