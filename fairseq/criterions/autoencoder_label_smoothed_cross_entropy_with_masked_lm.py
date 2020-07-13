@@ -35,6 +35,7 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
 # leave-unmasked-prob
     def __init__(self, task, sentence_avg, label_smoothing, lambda_masked, leave_unmasked_prob):
         super().__init__(task)
+        raise NotImplementedError("masked_logits not implemented yet")
         self.sentence_avg = sentence_avg
         self.eps = label_smoothing
         self.lambda_masked = lambda_masked
