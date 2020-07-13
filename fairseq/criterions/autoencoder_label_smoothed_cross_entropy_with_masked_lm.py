@@ -72,7 +72,7 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
             masked_logits[masked_idx,:].view(-1, masked_logits.size(-1)),
             tgt[masked_idx].view(-1),
             ignore_index=self.padding_idx,
-        )
+        ) * sample_size
         loss += self.lambda_masked * masked_loss
 
         logging_output = {
