@@ -581,7 +581,7 @@ class AutoencoderEncoder(FairseqEncoder):
 
         bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0].squeeze(0)
 
-        masked_logits = None is self.lm_head is None else self.lm_head(x)
+        masked_logits = None if self.lm_head is None else self.lm_head(x)
 
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
