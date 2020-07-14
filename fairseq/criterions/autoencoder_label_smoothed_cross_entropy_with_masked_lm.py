@@ -65,11 +65,11 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
         # masked lm
         src = sample['net_input']['src_tokens']
         tgt = sample['target']
-        masked_logits = net_output[1]["masked_encoder_logits"]
-        masked_idx = src != tgt
-        masked_idx = masked_idx | (torch.rand(*masked_idx.shape, device=masked_idx.device) < self.leave_unmasked_prob)
+        # masked_logits = net_output[1]["masked_encoder_logits"]
+        masked_idx = (src != tgt) | (torch.rand(*src.shape, device=src.device) < self.leave_unmasked_prob)
+        masked_logits = model.encoder.get_masked_logits(net_output[1]["encoder_out"], masked_idx)
         masked_loss = modules.cross_entropy(
-            masked_logits[masked_idx,:].view(-1, masked_logits.size(-1)),
+            masked_logits.view(-1, masked_logits.size(-1)),
             tgt[masked_idx].view(-1),
             ignore_index=self.padding_idx,
         ) * sample_size

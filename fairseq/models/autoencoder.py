@@ -37,7 +37,7 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
 @register_model('autoencoder')
-class Autoencoder(FairseqEncoderDecoderModel):
+class Autoencodder(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
@@ -289,7 +289,6 @@ AutoencoderEncoderOut = NamedTuple(
         ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
         ("src_tokens", Optional[Tensor]),  # B x T
         ("src_lengths", Optional[Tensor]),  # B x 1
-        ("masked_logits", Optional[Tensor]),  # T x B x V
     ],
 )
 
@@ -358,7 +357,6 @@ class RobertaEncoder(FairseqEncoder):
         # x, pooler_output, hidden_states = self.model(input_ids=x, attention_mask=attention_mask.float(), output_hidden_states=True)
 
         # masked_logits = self.model_for_mlm.cls(x)[0].transpose(0, 1)
-        masked_logits = self.roberta.output_layer(x)
 
         x = x.transpose(0, 1)
 
@@ -372,8 +370,10 @@ class RobertaEncoder(FairseqEncoder):
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
-            masked_logits=masked_logits,  # T x B x V
         )
+
+    def get_masked_logits(self, encoder_out, masked_tokens):
+        return self.roberta.output_layer(encoder_out.transpose(0, 1), masked_tokens)
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: AutoencoderEncoderOut, new_order):
@@ -427,12 +427,6 @@ class RobertaEncoder(FairseqEncoder):
         if encoder_states is not None:
             for idx, state in enumerate(encoder_states):
                 encoder_states[idx] = state.index_select(1, new_order)
-        
-        new_masked_logits = (
-            encoder_out.masked_logits
-            if encoder_out.masked_logits is None
-            else encoder_out.masked_logits.index_select(1, new_order)
-        )
 
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
@@ -442,7 +436,6 @@ class RobertaEncoder(FairseqEncoder):
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
             bottleneck_out=new_bottleneck_out,
-            masked_logits=new_masked_logits
         )
 
     def max_positions(self):
@@ -516,7 +509,7 @@ class AutoencoderEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
-        self.lm_head = None if not args.mask_words else RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
+        self.lm_head = RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -581,8 +574,6 @@ class AutoencoderEncoder(FairseqEncoder):
 
         bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:] if encoder_padding_mask is not None else None)[0].squeeze(0)
 
-        masked_logits = None if self.lm_head is None else self.lm_head(x.transpose(0, 1))
-
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
@@ -591,8 +582,10 @@ class AutoencoderEncoder(FairseqEncoder):
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
-            masked_logits=masked_logits,
         )
+    
+    def get_masked_logits(self, encoder_out, masked_tokens):
+        return self.lm_head(encoder_out.transpose(0, 1), masked_tokens)
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: AutoencoderEncoderOut, new_order):
@@ -647,12 +640,6 @@ class AutoencoderEncoder(FairseqEncoder):
             for idx, state in enumerate(encoder_states):
                 encoder_states[idx] = state.index_select(1, new_order)
 
-        new_masked_logits = (
-            encoder_out.masked_logits
-            if encoder_out.masked_logits is None
-            else encoder_out.masked_logits.index_select(1, new_order)
-        )
-
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
@@ -661,7 +648,6 @@ class AutoencoderEncoder(FairseqEncoder):
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
             bottleneck_out=new_bottleneck_out,
-            masked_logits=new_masked_logits,
         )
 
     def max_positions(self):
@@ -997,7 +983,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
-        return x, {"attn": [attn], "inner_states": inner_states, "masked_encoder_logits": encoder_out.masked_logits if encoder_out is not None else None}
+        return x, {"attn": [attn], "inner_states": inner_states, "encoder_out": encoder_out.encoder_out if encoder_out is not None else None}
 
     def output_layer(self, features):
         """Project features to the vocabulary size."""
