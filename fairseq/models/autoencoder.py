@@ -285,7 +285,6 @@ AutoencoderEncoderOut = NamedTuple(
         ("encoder_out", Tensor),  # T x B x C
         ("bottleneck_out", Tensor),  # B x C
         ("encoder_padding_mask", Optional[Tensor]),  # B x T
-        ("encoder_embedding", Optional[Tensor]),  # B x T x C
         ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
         ("src_tokens", Optional[Tensor]),  # B x T
         ("src_lengths", Optional[Tensor]),  # B x 1
@@ -365,7 +364,6 @@ class RobertaEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=hidden_states[0],  # B x T x C
             encoder_states=hidden_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
@@ -393,7 +391,6 @@ class RobertaEncoder(FairseqEncoder):
         variables for Torchscript Optional refinement
         """
         encoder_padding_mask: Optional[Tensor] = encoder_out.encoder_padding_mask
-        encoder_embedding: Optional[Tensor] = encoder_out.encoder_embedding
 
         new_encoder_out = (
             encoder_out.encoder_out
@@ -409,11 +406,6 @@ class RobertaEncoder(FairseqEncoder):
             encoder_padding_mask
             if encoder_padding_mask is None
             else encoder_padding_mask.index_select(0, new_order)
-        )
-        new_encoder_embedding = (
-            encoder_embedding
-            if encoder_embedding is None
-            else encoder_embedding.index_select(0, new_order)
         )
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
@@ -431,7 +423,6 @@ class RobertaEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
@@ -577,7 +568,6 @@ class AutoencoderEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
@@ -605,7 +595,6 @@ class AutoencoderEncoder(FairseqEncoder):
         variables for Torchscript Optional refinement
         """
         encoder_padding_mask: Optional[Tensor] = encoder_out.encoder_padding_mask
-        encoder_embedding: Optional[Tensor] = encoder_out.encoder_embedding
 
         new_encoder_out = (
             encoder_out.encoder_out
@@ -621,11 +610,6 @@ class AutoencoderEncoder(FairseqEncoder):
             encoder_padding_mask
             if encoder_padding_mask is None
             else encoder_padding_mask.index_select(0, new_order)
-        )
-        new_encoder_embedding = (
-            encoder_embedding
-            if encoder_embedding is None
-            else encoder_embedding.index_select(0, new_order)
         )
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
@@ -643,7 +627,6 @@ class AutoencoderEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
