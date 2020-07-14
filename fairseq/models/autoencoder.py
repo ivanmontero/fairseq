@@ -37,7 +37,7 @@ DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
 @register_model('autoencoder')
-class Autoencoder(FairseqEncoderDecoderModel):
+class Autoencodder(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
@@ -285,7 +285,6 @@ AutoencoderEncoderOut = NamedTuple(
         ("encoder_out", Tensor),  # T x B x C
         ("bottleneck_out", Tensor),  # B x C
         ("encoder_padding_mask", Optional[Tensor]),  # B x T
-        ("encoder_embedding", Optional[Tensor]),  # B x T x C
         ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
         ("src_tokens", Optional[Tensor]),  # B x T
         ("src_lengths", Optional[Tensor]),  # B x 1
@@ -355,7 +354,6 @@ class RobertaEncoder(FairseqEncoder):
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
         # x, pooler_output, hidden_states = self.model(input_ids=x, attention_mask=attention_mask.float(), output_hidden_states=True)
-
         x = x.transpose(0, 1)
 
         bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:])[0].squeeze(0)
@@ -363,12 +361,14 @@ class RobertaEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=hidden_states[0],  # B x T x C
             encoder_states=hidden_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
         )
+
+    def get_masked_logits(self, encoder_out, masked_tokens):
+        return self.roberta.output_layer(encoder_out.transpose(0, 1), masked_tokens)
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: AutoencoderEncoderOut, new_order):
@@ -388,7 +388,6 @@ class RobertaEncoder(FairseqEncoder):
         variables for Torchscript Optional refinement
         """
         encoder_padding_mask: Optional[Tensor] = encoder_out.encoder_padding_mask
-        encoder_embedding: Optional[Tensor] = encoder_out.encoder_embedding
 
         new_encoder_out = (
             encoder_out.encoder_out
@@ -404,11 +403,6 @@ class RobertaEncoder(FairseqEncoder):
             encoder_padding_mask
             if encoder_padding_mask is None
             else encoder_padding_mask.index_select(0, new_order)
-        )
-        new_encoder_embedding = (
-            encoder_embedding
-            if encoder_embedding is None
-            else encoder_embedding.index_select(0, new_order)
         )
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
@@ -426,7 +420,6 @@ class RobertaEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
@@ -504,7 +497,7 @@ class AutoencoderEncoder(FairseqEncoder):
         else:
             self.layernorm_embedding = None
 
-        self.lm_head = None if not args.mask_words else RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
+        self.lm_head = RobertaLMHead(embed_dim, len(dictionary), getattr(args, "activation_fn", "relu"))
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -572,12 +565,14 @@ class AutoencoderEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_embedding=encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
         )
+    
+    def get_masked_logits(self, encoder_out, masked_tokens):
+        return self.lm_head(encoder_out.transpose(0, 1), masked_tokens)
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: AutoencoderEncoderOut, new_order):
@@ -597,7 +592,6 @@ class AutoencoderEncoder(FairseqEncoder):
         variables for Torchscript Optional refinement
         """
         encoder_padding_mask: Optional[Tensor] = encoder_out.encoder_padding_mask
-        encoder_embedding: Optional[Tensor] = encoder_out.encoder_embedding
 
         new_encoder_out = (
             encoder_out.encoder_out
@@ -613,11 +607,6 @@ class AutoencoderEncoder(FairseqEncoder):
             encoder_padding_mask
             if encoder_padding_mask is None
             else encoder_padding_mask.index_select(0, new_order)
-        )
-        new_encoder_embedding = (
-            encoder_embedding
-            if encoder_embedding is None
-            else encoder_embedding.index_select(0, new_order)
         )
         src_tokens = encoder_out.src_tokens
         if src_tokens is not None:
@@ -635,7 +624,6 @@ class AutoencoderEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_embedding=new_encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
@@ -975,7 +963,7 @@ class AutoencoderDecoder(FairseqIncrementalDecoder):
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
-        return x, {"attn": [attn], "inner_states": inner_states}
+        return x, {"attn": [attn], "inner_states": inner_states, "encoder_out": encoder_out.encoder_out if encoder_out is not None else None}
 
     def output_layer(self, features):
         """Project features to the vocabulary size."""
