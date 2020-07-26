@@ -8,6 +8,7 @@ import json
 import itertools
 import logging
 import os
+import torch
 
 import numpy as np
 
@@ -232,8 +233,13 @@ class TranslationTask(FairseqTask):
         self.seed = args.seed
 
         # add mask token
-        self.src_mask_idx = src_dict.add_symbol('<mask>')
-        self.tgt_mask_idx = tgt_dict.add_symbol('<mask>')
+        if "autoencoder" in args.arch and "roberta" in args.arch:
+            hub_model = torch.hub.load('pytorch/fairseq', args.roberta_model)
+            self.src_mask_idx = hub_model.task.mask_idx
+            self.tgt_mask_idx = hub_model.task.mask_idx
+        else:
+            self.src_mask_idx = src_dict.add_symbol('<mask>')
+            self.tgt_mask_idx = tgt_dict.add_symbol('<mask>')
 
     @classmethod
     def setup_task(cls, args, **kwargs):
