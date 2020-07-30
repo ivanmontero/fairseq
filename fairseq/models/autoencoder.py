@@ -31,13 +31,14 @@ from fairseq.modules import (
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
 from fairseq.models.roberta.model import RobertaLMHead
+from transformers import AutoModelWithLMHead
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
 
 
 @register_model('autoencoder')
-class Autoencodder(FairseqEncoderDecoderModel):
+class Autoencoder(FairseqEncoderDecoderModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
@@ -149,8 +150,8 @@ class Autoencodder(FairseqEncoderDecoderModel):
                             help='The amount of attention heads in the bottleneck')
         parser.add_argument('--bottleneck-dropout', type=float,
                             help='the amount of dropout in the bottleneck')
-        parser.add_argument('--roberta-model', type=str,
-                            help="The roberta model to make the encoder")
+        parser.add_argument('--huggingface-model', type=str,
+                            help="The huggingface model to make the encoder")
         # fmt: on
 
     @classmethod
@@ -199,8 +200,8 @@ class Autoencodder(FairseqEncoderDecoderModel):
             )
 
         encoder = cls.build_encoder(args, src_dict, encoder_embed_tokens)
-        if args.share_all_embeddings and args.roberta_model is not None:
-            decoder_embed_tokens = encoder.roberta.sentence_encoder.embed_tokens
+        if args.share_all_embeddings and args.huggingface_model is not None:
+            decoder_embed_tokens = encoder.model.embeddings.word_embeddings
         decoder = cls.build_decoder(args, tgt_dict, decoder_embed_tokens)
         return cls(args, encoder, decoder)
 
@@ -218,8 +219,8 @@ class Autoencodder(FairseqEncoderDecoderModel):
 
     @classmethod
     def build_encoder(cls, args, src_dict, embed_tokens):
-        if args.roberta_model is not None:
-            return RobertaEncoder(args, src_dict, embed_tokens)
+        if args.huggingface_model is not None:
+            return HuggingfaceEncoder(args, src_dict, embed_tokens)
         else:
             return AutoencoderEncoder(args, src_dict, embed_tokens)
 
@@ -285,18 +286,14 @@ AutoencoderEncoderOut = NamedTuple(
         ("encoder_out", Tensor),  # T x B x C
         ("bottleneck_out", Tensor),  # B x C
         ("encoder_padding_mask", Optional[Tensor]),  # B x T
-        ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
         ("src_tokens", Optional[Tensor]),  # B x T
         ("src_lengths", Optional[Tensor]),  # B x 1
     ],
 )
-
-# Change to roberta
-class RobertaEncoder(FairseqEncoder):
+class HuggingfaceEncoder(FairseqEncoder):
     """
     Transformer encoder consisting of *args.encoder_layers* layers. Each layer
     is a :class:`TransformerEncoderLayer`.
-
     Args:
         args (argparse.Namespace): parsed command-line arguments
         dictionary (~fairseq.data.Dictionary): encoding dictionary
@@ -315,7 +312,10 @@ class RobertaEncoder(FairseqEncoder):
 
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
-        self.roberta = torch.hub.load('pytorch/fairseq', args.roberta_model).model.encoder
+        self.model_name = args.huggingface_model
+        self.model_for_mlm = AutoModelWithLMHead.from_pretrained(args.huggingface_model)
+        self.model = self.model_for_mlm.roberta if "roberta" in self.model_name else self.model_for_mlm.bert
+        self.embeddings = self.model.embeddings.word_embeddings
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -333,7 +333,6 @@ class RobertaEncoder(FairseqEncoder):
                 shape `(batch)`
             return_all_hiddens (bool, optional): also return all of the
                 intermediate hidden states (default: False).
-
         Returns:
             namedtuple:
                 - **encoder_out** (Tensor): the last encoder layer's output of
@@ -348,37 +347,31 @@ class RobertaEncoder(FairseqEncoder):
         """
 
         # # compute padding mask
-        x, extra = self.roberta(src_tokens, features_only=True, return_all_hiddens=True)
-        hidden_states = extra["inner_states"]
-        # attention_mask = src_tokens != self.padding_idx
-        encoder_padding_mask = src_tokens.eq(self.padding_idx)
+        attention_mask = src_tokens != self.padding_idx
 
-        # x, pooler_output, hidden_states = self.model(input_ids=x, attention_mask=attention_mask.float(), output_hidden_states=True)
+        x, pooler_output, hidden_states = self.model(input_ids=src_tokens, attention_mask=attention_mask.float(), output_hidden_states=True)
+
+        # masked_logits = self.model_for_mlm.cls(x)[0].transpose(0, 1)
+
         x = x.transpose(0, 1)
 
-        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=encoder_padding_mask[:,1:])[0].squeeze(0)
+        bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=(attention_mask[:,1:] == False) if attention_mask is not None else None)[0].squeeze(0)
 
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
-            encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_states=hidden_states,  # List[T x B x C]
+            encoder_padding_mask=(attention_mask == False),  # B x T
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
         )
 
-    def get_masked_logits(self, encoder_out, masked_tokens):
-        return self.roberta.output_layer(encoder_out.transpose(0, 1), masked_tokens)
-
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: AutoencoderEncoderOut, new_order):
         """
         Reorder encoder output according to *new_order*.
-
         Args:
             encoder_out: output from the ``forward()`` method
             new_order (LongTensor): desired order
-
         Returns:
             *encoder_out* rearranged according to *new_order*
         """
@@ -412,22 +405,18 @@ class RobertaEncoder(FairseqEncoder):
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
 
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
-
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
             bottleneck_out=new_bottleneck_out,
         )
 
+    def get_masked_logits(self, encoder_out, masked_tokens):
+        return (self.model_for_mlm.lm_head if "roberta" in self.model_name else self.model_for_mlm.cls)(encoder_out.transpose(0, 1)[masked_tokens, :])
+
     def max_positions(self):
-        """Maximum input length supported by the encoder."""
         return self.max_source_positions
 
     def upgrade_state_dict_named(self, state_dict, name):
@@ -548,14 +537,9 @@ class AutoencoderEncoder(FairseqEncoder):
         # compute padding mask
         encoder_padding_mask = src_tokens.eq(self.padding_idx)
 
-        encoder_states = [] if return_all_hiddens else None
-
         # encoder layers
         for layer in self.layers:
             x = layer(x, encoder_padding_mask)
-            if return_all_hiddens:
-                assert encoder_states is not None
-                encoder_states.append(x)
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
@@ -565,7 +549,6 @@ class AutoencoderEncoder(FairseqEncoder):
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
             encoder_padding_mask=encoder_padding_mask,  # B x T
-            encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=None,
             src_lengths=None,
             bottleneck_out=bottleneck_out,  # B x C
@@ -616,15 +599,9 @@ class AutoencoderEncoder(FairseqEncoder):
         if src_lengths is not None:
             src_lengths = src_lengths.index_select(0, new_order)
 
-        encoder_states = encoder_out.encoder_states
-        if encoder_states is not None:
-            for idx, state in enumerate(encoder_states):
-                encoder_states[idx] = state.index_select(1, new_order)
-
         return AutoencoderEncoderOut(
             encoder_out=new_encoder_out,  # T x B x C
             encoder_padding_mask=new_encoder_padding_mask,  # B x T
-            encoder_states=encoder_states,  # List[T x B x C]
             src_tokens=src_tokens,  # B x T
             src_lengths=src_lengths,  # B x 1
             bottleneck_out=new_bottleneck_out,
@@ -1105,7 +1082,7 @@ def base_architecture(args):
     args.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
     args.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.dropout)
 
-    args.roberta_model = getattr(args, "roberta_model", None)
+    args.huggingface_model = getattr(args, "huggingface_model", None)
 
 @register_model_architecture('autoencoder', 'autoencoder_cls_input')
 def transformer_wmt_en_de(args):
@@ -1114,7 +1091,7 @@ def transformer_wmt_en_de(args):
 
 @register_model_architecture('autoencoder', 'autoencoder_roberta_base')
 def transformer_wmt_en_de(args):
-    args.roberta_model = getattr(args, 'roberta_model', "roberta.base")
+    args.huggingface_model = getattr(args, 'huggingface_model', "roberta-base")
     args.encoder_embed_dim = 768
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 12)
     args.decoder_layers = getattr(args, "decoder_layers", 6)

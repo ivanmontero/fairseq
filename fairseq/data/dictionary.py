@@ -13,7 +13,7 @@ from fairseq.binarizer import safe_readline
 from fairseq.data import data_utils
 from fairseq.file_io import PathManager
 from fairseq.tokenizer import tokenize_line
-
+import json
 
 class Dictionary(object):
     """A mapping from symbols to consecutive integers"""
@@ -30,15 +30,17 @@ class Dictionary(object):
         self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
         self.symbols = []
         self.count = []
-        self.indices = {}
+        self.indices = {}  # Replace this
         self.bos_index = self.add_symbol(bos)
         self.pad_index = self.add_symbol(pad)
         self.eos_index = self.add_symbol(eos)
         self.unk_index = self.add_symbol(unk)
+        self.mask_index = None
         if extra_special_symbols:
             for s in extra_special_symbols:
                 self.add_symbol(s)
         self.nspecial = len(self.symbols)
+        self.json = False
 
     def __eq__(self, other):
         return self.indices == other.indices
@@ -211,8 +213,51 @@ class Dictionary(object):
         ```
         """
         d = cls()
-        d.add_from_file(f)
+        if ".json" in f:
+            d.set_from_json(f)
+        else:
+            d.add_from_file(f)
         return d
+
+    def set_from_json(self, f):
+        if isinstance(f, str):
+            try:
+                with PathManager.open(f, "r", encoding="utf-8") as fd:
+                    self.set_from_json(fd)
+            except FileNotFoundError as fnfe:
+                raise fnfe
+            except UnicodeError:
+                raise Exception(
+                    "Incorrect encoding detected in {}, please "
+                    "rebuild the dataset".format(f)
+                )
+            return
+        data = json.load(f)
+        # print(data)
+        special_tokens = data["special_tokens"]
+        self.unk_word = special_tokens["unk_word"]
+        self.pad_word = special_tokens["pad_word"]
+        self.eos_word = special_tokens["eos_word"]
+        self.bos_word = special_tokens["bos_word"]
+        self.mask_word = special_tokens["mask_word"]
+        self.unk_index = special_tokens["unk_index"]
+        self.pad_index = special_tokens["pad_index"]
+        self.eos_index = special_tokens["eos_index"]
+        self.bos_index = special_tokens["bos_index"]
+        self.mask_index = special_tokens["mask_index"]
+        self.indices = data["indices"]
+        self.symbols = list(self.indices.keys())
+        self.count = [1 for _ in range(len(self.symbols))]
+        self.json = True
+        # <SPECIAL_TOKENS>
+        # self.unk_word, self.pad_word, self.eos_word = unk, pad, eos
+        # self.symbols = []
+        # self.count = []
+        # self.indices = {}  # Replace this
+        # self.bos_index = self.add_symbol(bos)
+        # self.pad_index = self.add_symbol(pad)
+        # self.eos_index = self.add_symbol(eos)
+        # self.unk_index = self.add_symbol(unk)
 
     def add_from_file(self, f):
         """
@@ -268,22 +313,48 @@ class Dictionary(object):
         for k, v in kv_iterator:
             print("{} {}".format(k, v), file=f)
 
+    def _save_json(self, f):
+        if isinstance(f, str):
+            PathManager.mkdirs(os.path.dirname(f))
+            with PathManager.open(f + ".json", "w", encoding="utf-8") as fd:
+                return self._save_json(fd)
+
+        data = {}
+        special_tokens = {
+            "unk_word": self.unk_word,
+            "pad_word": self.pad_word,
+            "eos_word": self.eos_word,
+            "bos_word": self.bos_word,
+            "mask_word": self.mask_word,
+            "unk_index": self.unk_index,
+            "pad_index": self.pad_index,
+            "eos_index": self.eos_index,
+            "bos_index": self.bos_index,
+            "mask_index": self.mask_index
+        }
+        data["special_tokens"] = special_tokens
+        data["indices"] = self.indices
+        json.dump(data, f, ensure_ascii=False)
+
     def _get_meta(self):
         return [], []
 
     def _load_meta(self, lines):
         return 0
 
-    def save(self, f):
+    def save(self, f): # TODO
         """Stores dictionary into a text file"""
-        ex_keys, ex_vals = self._get_meta()
-        self._save(
-            f,
-            zip(
-                ex_keys + self.symbols[self.nspecial :],
-                ex_vals + self.count[self.nspecial :],
-            ),
-        )
+        if self.json:
+            self._save_json(f)
+        else:
+            ex_keys, ex_vals = self._get_meta()
+            self._save(
+                f,
+                zip(
+                    ex_keys + self.symbols[self.nspecial :],
+                    ex_vals + self.count[self.nspecial :],
+                ),
+            )
 
     def dummy_sentence(self, length):
         t = torch.Tensor(length).uniform_(self.nspecial + 1, len(self)).long()

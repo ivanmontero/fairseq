@@ -224,6 +224,8 @@ class TranslationTask(FairseqTask):
                             help='probability that a masked token is unmasked')
         parser.add_argument('--random-token-prob', default=0.1, type=float,
                             help='probability of replacing a token with a random token')
+        parser.add_argument('--dict-from-json', action="store_true",
+                           help='if dict is from json')
         # fmt: on
 
     def __init__(self, args, src_dict, tgt_dict):
@@ -233,10 +235,9 @@ class TranslationTask(FairseqTask):
         self.seed = args.seed
 
         # add mask token
-        if "autoencoder" in args.arch and "roberta" in args.arch:
-            hub_model = torch.hub.load('pytorch/fairseq', args.roberta_model)
-            self.src_mask_idx = hub_model.task.mask_idx
-            self.tgt_mask_idx = hub_model.task.mask_idx
+        if self.src_dict.json:
+            self.src_mask_idx = self.src_dict.mask_index
+            self.tgt_mask_idx = self.tgt_dict.mask_index
         else:
             self.src_mask_idx = src_dict.add_symbol('<mask>')
             self.tgt_mask_idx = tgt_dict.add_symbol('<mask>')
@@ -260,8 +261,8 @@ class TranslationTask(FairseqTask):
             raise Exception('Could not infer language pair, please provide it explicitly')
 
         # load dictionaries
-        src_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.source_lang)))
-        tgt_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.target_lang)))
+        src_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.source_lang) + (".json" if args.dict_from_json else "")))
+        tgt_dict = cls.load_dictionary(os.path.join(paths[0], 'dict.{}.txt'.format(args.target_lang) + (".json" if args.dict_from_json else "")))
         assert src_dict.pad() == tgt_dict.pad()
         assert src_dict.eos() == tgt_dict.eos()
         assert src_dict.unk() == tgt_dict.unk()
