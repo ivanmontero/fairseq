@@ -313,8 +313,10 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
         self.model_name = args.huggingface_model
-        self.model_for_mlm = AutoModelWithLMHead.from_pretrained(args.huggingface_model)
-        self.model = self.model_for_mlm.roberta if "roberta" in self.model_name else self.model_for_mlm.bert
+        model_for_mlm = AutoModelWithLMHead.from_pretrained(args.huggingface_model)
+        model_for_mlm.train()
+        self.mlm_head = model_for_mlm.lm_head if "roberta" in self.model_name else model_for_mlm.cls
+        self.model = model_for_mlm.roberta if "roberta" in self.model_name else model_for_mlm.bert
         self.embeddings = self.model.embeddings.word_embeddings
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
@@ -414,7 +416,7 @@ class HuggingfaceEncoder(FairseqEncoder):
         )
 
     def get_masked_logits(self, encoder_out, masked_tokens):
-        return (self.model_for_mlm.lm_head if "roberta" in self.model_name else self.model_for_mlm.cls)(encoder_out.transpose(0, 1)[masked_tokens, :])
+        return self.mlm_head(encoder_out.transpose(0, 1)[masked_tokens, :])
 
     def max_positions(self):
         return self.max_source_positions
