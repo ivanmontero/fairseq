@@ -31,7 +31,7 @@ from fairseq.modules import (
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
 from fairseq.models.roberta.model import RobertaLMHead
-from transformers import AutoModelWithLMHead
+from transformers import AutoModelForMaskedLM
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -313,7 +313,7 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
         self.model_name = args.huggingface_model
-        model_for_mlm = AutoModelWithLMHead.from_pretrained(args.huggingface_model)
+        model_for_mlm = AutoModelForMaskedLM.from_pretrained(args.huggingface_model)
         model_for_mlm.train()
         self.mlm_head = model_for_mlm.lm_head if "roberta" in self.model_name else model_for_mlm.cls
         self.model = model_for_mlm.roberta if "roberta" in self.model_name else model_for_mlm.bert
@@ -1099,6 +1099,16 @@ def transformer_wmt_en_de(args):
     args.decoder_layers = getattr(args, "decoder_layers", 6)
     args.decoder_embed_dim = 768
     args.decoder_ffn_embed_dim = 768*4
+    base_architecture(args)
+
+@register_model_architecture('autoencoder', 'autoencoder_roberta_large')
+def transformer_wmt_en_de(args):
+    args.huggingface_model = getattr(args, 'huggingface_model', "roberta-large")
+    args.encoder_embed_dim = 1024
+    args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
+    args.decoder_layers = getattr(args, "decoder_layers", 6)
+    args.decoder_embed_dim = 1024
+    args.decoder_ffn_embed_dim = 1024*4
     base_architecture(args)
 
 @register_model_architecture("autoencoder", "autoencoder_iwslt_de_en")
