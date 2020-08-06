@@ -295,7 +295,7 @@ class TranslationTask(FairseqTask):
             load_alignments=self.args.load_alignments,
             truncate_source=self.args.truncate_source,
             num_buckets=self.args.num_batch_buckets,
-            mask_words=self.args.mask_prob,
+            mask_words=self.args.mask_words,
             mask_prob=self.args.mask_prob,
             leave_unmasked_prob=self.args.leave_unmasked_prob,
             random_token_prob=self.args.random_token_prob,
