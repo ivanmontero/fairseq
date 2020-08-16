@@ -17,7 +17,7 @@ class CrossEntropyCriterion(FairseqCriterion):
     def __init__(self, task, sentence_avg):
         super().__init__(task)
         self.sentence_avg = sentence_avg
-        self.prev_pred = None
+        # self.prev_pred = None
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -30,15 +30,15 @@ class CrossEntropyCriterion(FairseqCriterion):
         net_output = model(**sample['net_input'])
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
-        curr_pred = F.normalize(model.decoder.output_projection.weight.detach().clone())
-        prev_pred_diff = (1 - torch.mean(F.cosine_similarity(curr_pred, self.prev_pred))) if self.prev_pred is not None else 0
-        self.prev_pred = curr_pred
+        # curr_pred = F.normalize(model.decoder.output_projection.weight.detach().clone())
+        # prev_pred_diff = (1 - torch.mean(F.cosine_similarity(curr_pred, self.prev_pred))) if self.prev_pred is not None else 0
+        # self.prev_pred = curr_pred
         logging_output = {
             'loss': loss.data,
             'ntokens': sample['ntokens'],
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
-            'prev_pred_diff': prev_pred_diff.data
+            # 'prev_pred_diff': prev_pred_diff.data
         }
         return loss, sample_size, logging_output
 
