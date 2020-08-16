@@ -175,6 +175,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
                             help='scalar quantization noise and scalar quantization at training time')
         parser.add_argument('--unit-predictions', action='store_true',
                             help='make final prediction output cosine similarities')
+        parser.add_argument('--unit-predictions-norm', type=float, default=5.0,
+                            help='scale cosine similarities for softmax')
         # fmt: on
 
     @classmethod
@@ -816,7 +818,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             if self.args.unit_predictions:
                 norm_features = F.normalize(features)
                 norm_out_projection = F.normalize(self.output_projection.weight)
-                return F.linear(norm_features, norm_out_projection, None)
+                return F.linear(norm_features, norm_out_projection, None) * self.args.unit_predictions_norm
             else:
                 # project back to size of vocabulary
                 return self.output_projection(features)
