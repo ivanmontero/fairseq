@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from fairseq import options, utils
 from fairseq.models import (
     FairseqEncoder,
@@ -172,6 +173,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
                             help='block size of quantization noise at training time')
         parser.add_argument('--quant-noise-scalar', type=float, metavar='D', default=0,
                             help='scalar quantization noise and scalar quantization at training time')
+        parser.add_argument('--unit-predictions', action='store_true',
+                            help='make final prediction output cosine similarities')
         # fmt: on
 
     @classmethod
@@ -810,8 +813,13 @@ class TransformerDecoder(FairseqIncrementalDecoder):
     def output_layer(self, features):
         """Project features to the vocabulary size."""
         if self.adaptive_softmax is None:
-            # project back to size of vocabulary
-            return self.output_projection(features)
+            if self.args.unit_predictions:
+                norm_features = F.normalize(features)
+                norm_out_projection = F.normalize(self.output_projection.weight)
+                return F.linear(norm_features, norm_out_projection, None)
+            else:
+                # project back to size of vocabulary
+                return self.output_projection(features)
         else:
             return features
 
@@ -942,6 +950,7 @@ def base_architecture(args):
     args.layernorm_embedding = getattr(args, "layernorm_embedding", False)
     args.tie_adaptive_weights = getattr(args, "tie_adaptive_weights", False)
 
+    args.unit_predictions = getattr(args, "unit_predictions", False)
 
 @register_model_architecture("transformer", "transformer_iwslt_de_en")
 def transformer_iwslt_de_en(args):
