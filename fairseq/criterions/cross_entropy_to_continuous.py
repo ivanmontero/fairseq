@@ -33,7 +33,7 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         # fmt: on
 
 
-    def get_continuous_prob(self, update_num):
+    # def get_continuous_prob(self, update_num):
 
     # def __init__(self, task, sentence_avg, label_smoothing):
     #     super().__init__(task)
