@@ -76,7 +76,7 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
 
         # filter out padding
         idx = target[target != self.padding_idx]
-        similaritiy = similarity[idx]
+        similarity = similarity[idx]
         target = target[idx]
 
         # Figure out signs
