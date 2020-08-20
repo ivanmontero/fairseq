@@ -71,7 +71,7 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
     def compute_loss(self, model, net_output, sample, reduce=True):
         pre_logits = net_output[0]  # (batch, tgt_len, vocab)
 
-        similarity = pre_logits.view(-1, pre_logits.size(-1))
+        similarity = pre_logits.reshape(-1, pre_logits.size(-1))
         target = model.get_targets(sample, net_output).view(-1)
 
         # filter out padding
