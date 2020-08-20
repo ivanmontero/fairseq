@@ -28,6 +28,7 @@ class BaseFairseqModel(nn.Module):
     def __init__(self):
         super().__init__()
         self._is_generation_fast = False
+        self.num_updates = 0
 
     @staticmethod
     def add_args(parser):
@@ -126,6 +127,7 @@ class BaseFairseqModel(nn.Module):
             if hasattr(m, 'set_num_updates') and m != self:
                 m.set_num_updates(num_updates)
         self.apply(_apply)
+        self.num_updates = num_updates
 
     def prepare_for_inference_(self, args):
         """Prepare model for inference."""
