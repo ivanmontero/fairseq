@@ -80,11 +80,11 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         target = target[idx]
 
         # Figure out signs
-        sign = torch.ones_like(similarity)
-        sign.scatter_(-1, target.unsqueeze(1), -1)
+        sign = torch.ones_like(similarity).float()
+        sign.scatter_(-1, target.unsqueeze(1), -1.0)
         
         # Compute cosine similarity
-        loss = (1 + sign * similarity)
+        loss = (1.0 + sign * similarity)
 
         if reduce:
             loss = loss.sum()
