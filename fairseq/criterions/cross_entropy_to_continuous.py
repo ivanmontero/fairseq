@@ -75,13 +75,13 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         target = model.get_targets(sample, net_output).view(-1)
 
         # filter out padding
-        idx = target[target != self.padding_idx]
+        idx = (target != self.padding_idx)
         similarity = similarity[idx]
         target = target[idx]
 
         # Figure out signs
         sign = torch.ones_like(similarity)
-        sign.scatter_(-1, target, -1)
+        sign.scatter_(-1, target.unsqueeze(1), -1)
         
         # Compute cosine similarity
         loss = (1 + sign * similarity)
