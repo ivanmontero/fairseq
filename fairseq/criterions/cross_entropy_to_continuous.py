@@ -115,9 +115,9 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         # metrics.log_scalar('prev_pred_diff', sum_prev_pred_diff / len(logging_outputs))
         if sample_size != ntokens:
             metrics.log_scalar('nll_loss', loss_sum / ntokens / math.log(2), ntokens, round=3)
-            metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
-        else:
-            metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['loss'].avg))
+            # metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
+        # else:
+            # metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['loss'].avg))
 
     @staticmethod
     def logging_outputs_can_be_summed() -> bool:
