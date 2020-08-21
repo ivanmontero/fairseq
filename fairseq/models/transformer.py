@@ -816,8 +816,8 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         """Project features to the vocabulary size."""
         if self.adaptive_softmax is None:
             if self.args.unit_predictions:
-                norm_features = F.normalize(features)
-                norm_out_projection = F.normalize(self.output_projection.weight)
+                norm_features = F.normalize(features, dim=-1)
+                norm_out_projection = F.normalize(self.output_projection.weight, dim=-1)
                 return F.linear(norm_features, norm_out_projection, None) * self.args.unit_predictions_norm
             else:
                 # project back to size of vocabulary
