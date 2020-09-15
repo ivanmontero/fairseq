@@ -59,6 +59,9 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         net_output = model(**sample['net_input'])  # features_only=True
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
+        curr_pred = model.decoder.output_projection.weight
+        prev_pred_diff = 0 if self.prev_pred is None else F.cosine_similarity(curr_pred, self.prev_pred, dim=-1).mean()
+        self.prev_pred = curr_pred
         logging_output = {
             'loss': loss.data,
             'ntokens': sample['ntokens'],
@@ -112,7 +115,7 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         sum_prev_pred_diff = sum(log.get('prev_pred_diff', 0) for log in logging_outputs)
 
         metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-        # metrics.log_scalar('prev_pred_diff', sum_prev_pred_diff / len(logging_outputs))
+        metrics.log_scalar('prev_pred_diff', sum_prev_pred_diff / len(logging_outputs), 0)
         if sample_size != ntokens:
             metrics.log_scalar('nll_loss', loss_sum / ntokens / math.log(2), ntokens, round=3)
             # metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
