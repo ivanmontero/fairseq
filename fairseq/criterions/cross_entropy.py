@@ -17,7 +17,7 @@ class CrossEntropyCriterion(FairseqCriterion):
     def __init__(self, task, sentence_avg):
         super().__init__(task)
         self.sentence_avg = sentence_avg
-        # self.prev_pred = None
+        self.prev_pred = None
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
