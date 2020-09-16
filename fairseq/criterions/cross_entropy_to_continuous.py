@@ -18,7 +18,8 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
     def __init__(self, task, sentence_avg):
         super().__init__(task)
         self.sentence_avg = sentence_avg
-        self.prev_pred = None    
+        self.prev_pred = None   
+        self.prev_pred_diff_prev = 0
 
     @staticmethod
     def add_args(parser):
@@ -59,15 +60,17 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
         net_output = model(**sample['net_input'])  # features_only=True
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
-        curr_pred = model.decoder.output_projection.weight.detach().clone()
-        prev_pred_diff = 0 if self.prev_pred is None else F.cosine_similarity(curr_pred, self.prev_pred, dim=-1).mean()
-        self.prev_pred = curr_pred
+        if model.num_updates % 1000 == 0:
+            curr_pred = model.decoder.output_projection.weight.detach().clone()
+            prev_pred_diff = 0 if self.prev_pred is None else 1 - F.cosine_similarity(curr_pred, self.prev_pred, dim=-1).mean()
+            self.prev_pred = curr_pred
+            self.prev_pred_diff_prev = prev_pred_diff
         logging_output = {
             'loss': loss.data,
             'ntokens': sample['ntokens'],
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
-            'prev_pred_diff': prev_pred_diff
+            'prev_pred_diff': self.prev_pred_diff_prev
         }
         return loss, sample_size, logging_output
 
