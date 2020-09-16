@@ -30,7 +30,7 @@ class CrossEntropyCriterion(FairseqCriterion):
         net_output = model(**sample['net_input'])
         loss, _ = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
-        curr_pred = model.decoder.output_projection.weight.detach().copy()
+        curr_pred = model.decoder.output_projection.weight.detach().clone()
         prev_pred_diff = 0 if self.prev_pred is None else F.cosine_similarity(curr_pred, self.prev_pred, dim=-1).mean()
         self.prev_pred = curr_pred
         logging_output = {
