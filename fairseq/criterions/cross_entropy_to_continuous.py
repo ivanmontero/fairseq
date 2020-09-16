@@ -67,7 +67,7 @@ class CrossEntropyToContinuousCriterion(FairseqCriterion):
             'ntokens': sample['ntokens'],
             'nsentences': sample['target'].size(0),
             'sample_size': sample_size,
-            # 'prev_pred_diff': prev_pred_diff
+            'prev_pred_diff': prev_pred_diff
         }
         return loss, sample_size, logging_output
 
