@@ -34,6 +34,7 @@ class LinearSchedule(FairseqLRScheduler):
 
         # linearly warmup for the first args.warmup_updates
         self.lr_step = (warmup_end_lr - args.warmup_init_lr) / args.warmup_updates
+        self.max_lr = args.lr[0]
 
         # then, decay prop. to the inverse square root of the update number
         # self.decay_factor = warmup_end_lr * args.warmup_updates**0.5
@@ -69,7 +70,7 @@ class LinearSchedule(FairseqLRScheduler):
             # self.lr = self.decay_factor * num_updates**-0.5
             self.lr = max(
                 0.0, float(self.max_steps - num_updates) / float(max(1, self.max_steps - self.warmup_steps))
-            )
+            ) * self.max_lr
         self.optimizer.set_lr(self.lr)
         return self.lr
         # if current_step < num_warmup_steps:
