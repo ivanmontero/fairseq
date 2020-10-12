@@ -152,6 +152,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
                             help='the amount of dropout in the bottleneck')
         parser.add_argument('--huggingface-model', type=str,
                             help="The huggingface model to make the encoder")
+        parser.add_argument('--freeze-bert', action='store_true',
+                            help="If to freeze bert and make untrainable")
         # fmt: on
 
     @classmethod
@@ -318,6 +320,10 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.mlm_head = model_for_mlm.lm_head if "roberta" in self.model_name else model_for_mlm.cls
         self.model = model_for_mlm.roberta if "roberta" in self.model_name else model_for_mlm.bert
         self.embeddings = self.model.embeddings.word_embeddings
+
+        if args.freeze_bert:  # Should not be used with mlm
+            for p in self.model.parameters():
+                p.requires_grad = False
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
@@ -1085,6 +1091,7 @@ def base_architecture(args):
     args.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.dropout)
 
     args.huggingface_model = getattr(args, "huggingface_model", None)
+    args.freeze_bert = getattr(args, "freeze_bert", False)
 
 @register_model_architecture('autoencoder', 'autoencoder_cls_input')
 def transformer_wmt_en_de(args):
