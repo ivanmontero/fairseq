@@ -31,7 +31,7 @@ from fairseq.modules import (
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 from torch import Tensor
 from fairseq.models.roberta.model import RobertaLMHead
-from transformers import AutoModelForMaskedLM
+from transformers import AutoModelForMaskedLM, AutoConfig
 
 DEFAULT_MAX_SOURCE_POSITIONS = 1024
 DEFAULT_MAX_TARGET_POSITIONS = 1024
@@ -154,6 +154,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
                             help="The huggingface model to make the encoder")
         parser.add_argument('--freeze-bert', action='store_true',
                             help="If to freeze bert and make untrainable")
+        parser.add_argument('--bert-from-scratch', action='store_true',
+                            help="If to start from scratch. Follows encoder-layers and encoder-hidden-size")
         # fmt: on
 
     @classmethod
@@ -315,7 +317,15 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
         self.model_name = args.huggingface_model
-        model_for_mlm = AutoModelForMaskedLM.from_pretrained(args.huggingface_model)
+        if args.bert_from_scratch:
+            config = AutoConfig.from_pretrained(args.huggingface_model)
+            config.num_hidden_layers = args.encoder_layers
+            config.hidden_size = args.encoder_embed_dim
+            config.num_attention_heads = args.encoder_attention_heads
+            config.intermediate_size = args.encoder_ffn_embed_dim
+            model_for_mlm = AutoModelForMaskedLM.from_config(config)
+        else:
+            model_for_mlm = AutoModelForMaskedLM.from_pretrained(args.huggingface_model)
         model_for_mlm.train()
         self.mlm_head = model_for_mlm.lm_head if "roberta" in self.model_name else model_for_mlm.cls
         self.model = model_for_mlm.roberta if "roberta" in self.model_name else model_for_mlm.bert
@@ -1101,21 +1111,27 @@ def transformer_wmt_en_de(args):
 @register_model_architecture('autoencoder', 'autoencoder_roberta_base')
 def transformer_wmt_en_de(args):
     args.huggingface_model = getattr(args, 'huggingface_model', "roberta-base")
-    args.encoder_embed_dim = 768
+    args.encoder_layers = getattr(args, "encoder_layers", 12)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 12)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 768)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", args.encoder_embed_dim*4)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 12)
     args.decoder_layers = getattr(args, "decoder_layers", 6)
-    args.decoder_embed_dim = 768
-    args.decoder_ffn_embed_dim = 768*4
+    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 768)
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", args.decoder_embed_dim*4)
     base_architecture(args)
 
 @register_model_architecture('autoencoder', 'autoencoder_roberta_large')
 def transformer_wmt_en_de(args):
     args.huggingface_model = getattr(args, 'huggingface_model', "roberta-large")
-    args.encoder_embed_dim = 1024
+    args.encoder_layers = getattr(args, "encoder_layers", 24)
+    args.encoder_attention_heads = getattr(args, "encoder_attention_heads", 16)
+    args.encoder_embed_dim = getattr(args, "encoder_embed_dim", 1024)
+    args.encoder_ffn_embed_dim = getattr(args, "encoder_ffn_embed_dim", args.encoder_embed_dim*4)
     args.decoder_attention_heads = getattr(args, "decoder_attention_heads", 16)
     args.decoder_layers = getattr(args, "decoder_layers", 6)
-    args.decoder_embed_dim = 1024
-    args.decoder_ffn_embed_dim = 1024*4
+    args.decoder_embed_dim = getattr(args, "decoder_embed_dim", 1024)
+    args.decoder_ffn_embed_dim = getattr(args, "decoder_ffn_embed_dim", args.decoder_embed_dim*4)
     base_architecture(args)
 
 @register_model_architecture("autoencoder", "autoencoder_iwslt_de_en")
