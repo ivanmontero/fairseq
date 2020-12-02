@@ -317,7 +317,7 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.embed_scale = 1.0 if args.no_scale_embedding else math.sqrt(embed_dim)
 
         self.model_name = args.huggingface_model
-        if args.bert_from_scratch:
+        if hasattr(args, 'bert_from_scratch') and args.bert_from_scratch:
             config = AutoConfig.from_pretrained(args.huggingface_model)
             config.num_hidden_layers = args.encoder_layers
             config.hidden_size = args.encoder_embed_dim
