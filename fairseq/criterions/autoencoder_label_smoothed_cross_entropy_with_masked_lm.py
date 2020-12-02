@@ -33,12 +33,13 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
 @register_criterion('autoencoder_label_smoothed_cross_entropy_with_masked_lm')
 class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion):
 # leave-unmasked-prob
-    def __init__(self, task, sentence_avg, label_smoothing, lambda_masked, leave_unmasked_prob):
+    def __init__(self, task, sentence_avg, label_smoothing, lambda_masked, leave_unmasked_prob, no_compute_nll=False):
         super().__init__(task)
         self.sentence_avg = sentence_avg
         self.eps = label_smoothing
         self.lambda_masked = lambda_masked
         self.leave_unmasked_prob = leave_unmasked_prob
+        self.no_compute_nll = no_compute_nll
 
     @staticmethod
     def add_args(parser):
@@ -48,6 +49,8 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
                             help='epsilon for label smoothing, 0 means no label smoothing')
         parser.add_argument('--lambda-masked', default=1, type=float,
                             help='The weight to put on the masked language modeling objective')
+        parser.add_argument('--no-compute-nll', action='store_true',
+                            help='If to compute the negative log likelihood')
         # fmt: on
 
     def forward(self, model, sample, reduce=True):
@@ -60,7 +63,10 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
         """
         net_output = model(**sample['net_input'])
         # nll
-        loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        if not self.no_compute_nll:
+            loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+        else:
+            loss, nll_loss = 0, 0
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
         # masked lm
         src = sample['net_input']['src_tokens']
