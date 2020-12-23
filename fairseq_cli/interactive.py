@@ -177,7 +177,7 @@ def main(args):
 
             model = models[0]
             diff_enc.append(
-                model.encoder(tgt_tokens, tgt_lengths).bottleneck_out - model.encoder(, tgt_lengths).bottleneck_out
+                model.encoder(tgt_tokens, tgt_lengths).bottleneck_out - model.encoder(src_tokens, src_lengths).bottleneck_out
             )
         
         style_vector = torch.cat(diff_enc, dim=0).mean(dim=0)
