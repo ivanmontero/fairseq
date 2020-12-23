@@ -381,7 +381,7 @@ class HuggingfaceEncoder(FairseqEncoder):
         # if self.style_vector is not None:
         #     encoder_out = encoder_out._replace(bottleneck_out=encoder_out.bottleneck_out + self.style_vector_k * self.style_vector.unsqueeze(0))
 
-        if self.style_vector_k is not None:
+        if self.style_vector is not None:
             bottleneck_out = bottleneck_out + self.style_vector_k * self.style_vector.unsqueeze(0)
 
         return AutoencoderEncoderOut(
