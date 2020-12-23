@@ -151,6 +151,45 @@ def main(args):
     logger.info('NOTE: hypothesis and token scores are output in base 2')
     logger.info('Type the input sentence and press return:')
     start_id = 0
+
+    # style-file
+    if args.style_file_src != '-' and args.style_file_tgt != '-':
+        src, tgt = [], []
+        for inputs in buffered_read(args.style_file_src, args.buffer_size):
+            src.extend(inputs)
+        for inputs in buffered_read(args.style_file_tgt, args.buffer_size):
+            tgt.extend(inputs)
+
+        assert len(src) == len(tgt)
+        diff_enc = []
+        for src_batch, tgt_batch in zip(
+                make_batches(src, args, task, max_positions, encode_fn),
+                make_batches(tgt, args, task, max_positions, encode_fn)):
+            src_tokens = src_batch.src_tokens
+            src_lengths = src_batch.src_lengths
+            tgt_tokens = tgt_batch.src_tokens
+            tgt_lengths = tgt_batch.src_lengths
+            if use_cuda:
+                src_tokens = src_tokens.cuda()
+                src_lengths = src_lengths.cuda()
+                tgt_tokens = tgt_tokens.cuda()
+                tgt_lengths = tgt_lengths.cuda()
+
+            model = models[0]
+            diff_enc.append(
+                model.encoder(tgt_tokens, tgt_lengths).bottleneck_out - model.encoder(, tgt_lengths).bottleneck_out
+            )
+        
+        style_vector = torch.cat(diff_enc, dim=0).mean(dim=0)
+        model.encoder.style_vector = style_vector
+        model.encoder.style_vector_k = args.style_file_k
+
+    
+
+    # def forward(self, src_tokens, src_lengths, return_all_hiddens: bool = False):
+
+
+    # Here is where to create the generations.
     for inputs in buffered_read(args.input, args.buffer_size):
         results = []
         for batch in make_batches(inputs, args, task, max_positions, encode_fn):

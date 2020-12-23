@@ -633,6 +633,12 @@ def add_interactive_args(parser):
                        help='read this many sentences into a buffer before processing them')
     group.add_argument('--input', default='-', type=str, metavar='FILE',
                        help='file to read from; use - for stdin')
+    group.add_argument('--style-file-src', default='-', type=str, metavar='FILE',
+                       help='file to read from for style transfer src')
+    group.add_argument('--style-file-tgt', default='-', type=str, metavar='FILE',
+                       help='file to read from for style transfer tgt')
+    group.add_argument('--style-file-k', default=1.0, type=float, metavar='k',
+                       help='the scaling factor of the style')
     # fmt: on
 
 

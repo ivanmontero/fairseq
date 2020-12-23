@@ -339,6 +339,9 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
         self.bottleneck = MultiheadAttention(embed_dim, self.bottleneck_attention_heads, dropout=self.bottleneck_dropout)
 
+        self.style_vector = None
+        self.style_vector_k = 1.0
+
     def build_encoder_layer(self, args):
         return TransformerEncoderLayer(args)
 
@@ -374,6 +377,12 @@ class HuggingfaceEncoder(FairseqEncoder):
         x = x.transpose(0, 1)
 
         bottleneck_out = self.bottleneck(x[0,:,:].unsqueeze(0), x[1:,:,:], x[1:,:,:], key_padding_mask=(attention_mask[:,1:] == False) if attention_mask is not None else None)[0].squeeze(0)
+
+        # if self.style_vector is not None:
+        #     encoder_out = encoder_out._replace(bottleneck_out=encoder_out.bottleneck_out + self.style_vector_k * self.style_vector.unsqueeze(0))
+
+        if self.style_vector_k is not None:
+            bottleneck_out = bottleneck_out + self.style_vector_k * self.style_vector.unsqueeze(0)
 
         return AutoencoderEncoderOut(
             encoder_out=x,  # T x B x C
