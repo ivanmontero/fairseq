@@ -253,6 +253,7 @@ def train(args, trainer, task, epoch_itr):
     return valid_losses, should_stop
 
 
+# Can do early stopping here
 def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoch):
     num_updates = trainer.get_num_updates()
     do_save = (

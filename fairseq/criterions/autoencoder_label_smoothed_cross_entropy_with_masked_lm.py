@@ -61,20 +61,24 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
-        net_output = model(**sample['net_input'])
         # nll
         if not self.no_compute_nll:
+            net_output = model(**sample['net_input'])
             loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
+            encoder_out = net_output[1]["encoder_out"]
         else:
             device = sample['target'].device
             loss, nll_loss = torch.tensor(0, device=device), torch.tensor(0, device=device)
+            encoder_out = model.encoder(
+                src_tokens=sample['net_input']['src_tokens'], src_lengths=sample['net_input']['src_lengths'], return_all_hiddens=sample['net_input']['return_all_hiddens']
+            ).encoder_out
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
         # masked lm
         src = sample['net_input']['src_tokens']
         tgt = sample['target']
         # masked_logits = net_output[1]["masked_encoder_logits"]
         masked_idx = (src != tgt) | (torch.rand(*src.shape, device=src.device) < self.leave_unmasked_prob)
-        masked_logits = model.encoder.get_masked_logits(net_output[1]["encoder_out"], masked_idx)
+        masked_logits = model.encoder.get_masked_logits(encoder_out, masked_idx)
         masked_loss = modules.cross_entropy(
             masked_logits.view(-1, masked_logits.size(-1)),
             tgt[masked_idx].view(-1),
