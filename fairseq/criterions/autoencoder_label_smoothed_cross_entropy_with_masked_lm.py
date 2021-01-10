@@ -70,7 +70,7 @@ class AutoencoderLabelSmoothedCrossEntropyWithMaskedLmCriterion(FairseqCriterion
             device = sample['target'].device
             loss, nll_loss = torch.tensor(0, device=device), torch.tensor(0, device=device)
             encoder_out = model.encoder(
-                src_tokens=sample['net_input']['src_tokens'], src_lengths=sample['net_input']['src_lengths'], return_all_hiddens=sample['net_input']['return_all_hiddens']
+                src_tokens=sample['net_input']['src_tokens'], src_lengths=sample['net_input']['src_lengths'], return_all_hiddens=True
             ).encoder_out
         sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
         # masked lm
