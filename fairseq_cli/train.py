@@ -13,6 +13,7 @@ import math
 import os
 import random
 import sys
+import time
 from typing import Callable, Optional
 
 import numpy as np
@@ -194,6 +195,7 @@ def tpu_data_loader(args, itr):
 def train(args, trainer, task, epoch_itr):
     """Train the model for one epoch and return validation losses."""
     # Initialize data iterator
+    trainer.start_time = time.time()
     itr = epoch_itr.next_epoch_itr(
         fix_batches_to_gpus=args.fix_batches_to_gpus,
         shuffle=(epoch_itr.next_epoch_idx > args.curriculum),
@@ -256,6 +258,7 @@ def train(args, trainer, task, epoch_itr):
 # Can do early stopping here
 def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoch):
     num_updates = trainer.get_num_updates()
+    delta = time.time() - trainer.start_time
     do_save = (
         args.save_interval_updates > 0
         and num_updates > 0
@@ -264,6 +267,7 @@ def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoc
     do_validate = (
         (not end_of_epoch and do_save)  # validate during mid-epoch saves
         or (end_of_epoch and epoch_itr.epoch % args.validate_interval == 0)
+        or (args.max_time != 0 and delta > args.max_time)
     ) and not args.disable_validation
 
     # Validate
@@ -276,6 +280,7 @@ def validate_and_save(args, trainer, task, epoch_itr, valid_subsets, end_of_epoc
     should_stop = (
         should_stop_early(args, valid_losses[0])
         or trainer.get_num_updates() >= max_update
+        or (args.max_time != 0 and delta > args.max_time)
     )
 
     # Save checkpoint
