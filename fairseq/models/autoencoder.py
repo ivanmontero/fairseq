@@ -154,6 +154,8 @@ class Autoencoder(FairseqEncoderDecoderModel):
                             help="The huggingface model to make the encoder")
         parser.add_argument('--freeze-bert', action='store_true',
                             help="If to freeze bert and make untrainable")
+        parser.add_argument('--freeze-bert-except-n', type=int,
+                            help="Freeze bert but make the last n layers trainable.")
         parser.add_argument('--bert-from-scratch', action='store_true',
                             help="If to start from scratch. Follows encoder-layers and encoder-hidden-size")
         # fmt: on
@@ -331,9 +333,13 @@ class HuggingfaceEncoder(FairseqEncoder):
         self.model = model_for_mlm.roberta if "roberta" in self.model_name else model_for_mlm.bert
         self.embeddings = self.model.embeddings.word_embeddings
 
-        if args.freeze_bert:  # Should not be used with mlm
+        if args.freeze_bert or args.freeze_bert_except_n > 0:  # Should not be used with mlm
             for p in self.model.parameters():
                 p.requires_grad = False
+            if args.freeze_bert_except_n > 0:
+                for i in range(args.freeze_bert_except_n):
+                    for p in self.model.encoder.layer[-(i+1)]:
+                        p.requires_grad = True
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
         self.bottleneck_dropout = getattr(args, "bottleneck_dropout", args.attention_dropout)
