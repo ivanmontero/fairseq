@@ -338,7 +338,7 @@ class HuggingfaceEncoder(FairseqEncoder):
                 p.requires_grad = False
             if args.freeze_bert_except_n > 0:
                 for i in range(args.freeze_bert_except_n):
-                    for p in self.model.encoder.layer[-(i+1)].parameters:
+                    for p in self.model.encoder.layer[-(i+1)].parameters():
                         p.requires_grad = True
 
         self.bottleneck_attention_heads = getattr(args, "bottleneck_attention_heads", args.encoder_attention_heads)
