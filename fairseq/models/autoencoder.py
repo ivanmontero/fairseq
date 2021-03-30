@@ -1117,6 +1117,7 @@ def base_architecture(args):
 
     args.huggingface_model = getattr(args, "huggingface_model", None)
     args.freeze_bert = getattr(args, "freeze_bert", False)
+    args.freeze_bert_except_n = getattr(args, "freeze_bert_except_n", False)
 
 @register_model_architecture('autoencoder', 'autoencoder_cls_input')
 def transformer_wmt_en_de(args):
